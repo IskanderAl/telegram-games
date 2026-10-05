@@ -7,7 +7,7 @@ const SHOW = 20;
 
 export default async (req) => {
   const user = verifyInitData(req.headers.get("x-init-data"), Netlify.env.get("BOT_TOKEN"));
-  const store = getStore("leaderboard");
+  const store = getStore({ name: "leaderboard", consistency: "strong" });
   const top = (await store.get("top", { type: "json" })) || [];
 
   if (req.method === "GET") {

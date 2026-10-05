@@ -10,7 +10,7 @@ export default async (req) => {
   const user = verifyInitData(req.headers.get("x-init-data"), Netlify.env.get("BOT_TOKEN"));
   if (!user) return json({ error: "unauthorized" }, 401);
 
-  const store = getStore("rewards");
+  const store = getStore({ name: "rewards", consistency: "strong" });
   const key = "pending:" + user.id;
   const ts = Number(await store.get(key));
   if (!ts) return json({ ok: false, reason: "no_reward" }, 404);
