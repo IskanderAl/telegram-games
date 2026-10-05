@@ -7,7 +7,13 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
   <style>
-    #wrap { position: relative; }
+    html, body { margin: 0; min-height: 100%; background: #1b1d2a; overscroll-behavior: none; }
+    body { display: flex; align-items: center; justify-content: center; padding: 8px 0; box-sizing: border-box; }
+    #wrap { position: relative; width: 100%; max-width: 800px; }
+    canvas { width: 100%; display: block; background: #f4f1de; touch-action: none; user-select: none; }
+    p { color: #8b90ad; font: 13px sans-serif; text-align: center; margin: 10px 8px 0; }
+    .hidden { display: none !important; }
+
     #revive {
       position: absolute; left: 50%; top: 58%; transform: translateX(-50%);
       border: 0; border-radius: 12px; background: #7b5cff; color: #fff;
@@ -15,14 +21,21 @@
     }
     #revive:active { transform: translateX(-50%) translateY(3px); box-shadow: 0 1px 0 #5238c9; }
     #revive:disabled { opacity: .5; }
-    .hidden { display: none; }
     #msg { position: absolute; left: 0; right: 0; top: 8px; text-align: center; color: #3a3a3a; font: 14px sans-serif; }
+
+    #setup { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 8px 0; }
+    .card { background: #262a3d; border-radius: 12px; padding: 10px; display: flex; gap: 10px; align-items: center; color: #e6e8f5; font: 13px sans-serif; }
+    .card img { width: 56px; height: 56px; border-radius: 12px; object-fit: cover; background: #3a3f5a; flex: none; }
+    .card .col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .card b { font-size: 14px; }
+    .card .btns { display: flex; gap: 6px; flex-wrap: wrap; }
+    .pick, .card button {
+      border: 0; border-radius: 8px; background: #7b5cff; color: #fff; font: 600 12px sans-serif;
+      padding: 6px 10px; cursor: pointer;
+    }
+    .card button { background: #3a3f5a; }
+
     .demo-ad { position: fixed; inset: 0; background: #111; color: #fff; z-index: 40; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; font: 16px sans-serif; text-align: center; padding: 24px; }
-    html, body { margin: 0; height: 100%; background: #1b1d2a; overscroll-behavior: none; }
-    body { display: flex; align-items: center; justify-content: center; }
-    #wrap { width: 100%; max-width: 800px; }
-    canvas { width: 100%; display: block; background: #f4f1de; touch-action: none; user-select: none; image-rendering: pixelated; }
-    p { color: #8b90ad; font: 13px sans-serif; text-align: center; margin: 10px 8px 0; }
   </style>
 </head>
 <body>
@@ -30,7 +43,32 @@
     <canvas id="c" width="800" height="300"></canvas>
     <button id="revive" class="hidden" type="button">📺 Воскреснуть (реклама)</button>
     <div id="msg" class="hidden"></div>
+
+    <div id="setup">
+      <div class="card">
+        <img id="prev-player" alt="">
+        <div class="col">
+          <b>Ты</b>
+          <div class="btns">
+            <label class="pick">Фото<input type="file" accept="image/*" data-slot="player" hidden></label>
+            <button type="button" data-clear="player">Сброс</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <img id="prev-target" alt="">
+        <div class="col">
+          <b>Кого догоняем</b>
+          <div class="btns">
+            <label class="pick">Фото<input type="file" accept="image/*" data-slot="target" hidden></label>
+            <button type="button" data-clear="target">Сброс</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <p>Прыжок: тап по верху / Пробел / ↑ &nbsp;·&nbsp; Присесть: зажать низ экрана / ↓</p>
+    <p>Фото хранятся только на твоём устройстве и никуда не отправляются.</p>
   </div>
 
 <script src="../config.js"></script>
@@ -46,25 +84,92 @@ const haptic = (k) => { try { tg && tg.HapticFeedback.impactOccurred(k); } catch
 const W = 800, H = 300, GROUND = 250;
 const GRAVITY = 2400, JUMP_V = -820, FAST_FALL = 2.2;
 const SPEED_START = 320, SPEED_MAX = 760, SPEED_GROWTH = 0.1;
+const SPRITE_W = 48, SPRITE_H = 60, DUCK_H = 32;
+const TARGET_SIZE = 46;
+const PHOTO_PX = 128; // сторона сохраняемого квадрата
 
 // Block ID из кабинета Adsgram (partner.adsgram.ai). Пусто = демо-режим с фейковой рекламой.
 const ADSGRAM_BLOCK_ID = (window.APP_CONFIG && window.APP_CONFIG.ADSGRAM_BLOCK_ID) || "";
 const REVIVE_INVULN_SEC = 2;
 const REVIVE_CLEAR_PX = 450; // сколько пикселей впереди очищается от препятствий
 
-// Спрайт: положите player.png (и по желанию player_duck.png) рядом с этим файлом
-const SPRITE_W = 48, SPRITE_H = 60, DUCK_H = 32;
-const sprite = loadImg("player.png");
-const spriteDuck = loadImg("player_duck.png");
-function loadImg(src) {
-  const o = { img: new Image(), ok: false };
-  o.img.onload = () => (o.ok = true);
-  o.img.src = src;
-  return o;
-}
-
 const cv = document.getElementById("c");
 const ctx = cv.getContext("2d");
+
+// ───────────── Фото игрока и цели ─────────────
+const imgs = { player: null, target: null };
+const previews = { player: document.getElementById("prev-player"), target: document.getElementById("prev-target") };
+const store = {
+  get: (k) => { try { return localStorage.getItem("runner_" + k); } catch (_) { return null; } },
+  set: (k, v) => { try { localStorage.setItem("runner_" + k, v); } catch (_) {} },
+  del: (k) => { try { localStorage.removeItem("runner_" + k); } catch (_) {} },
+};
+
+function applyPhoto(slot, dataUrl) {
+  if (!dataUrl) {
+    imgs[slot] = null;
+    previews[slot].removeAttribute("src");
+    return;
+  }
+  const im = new Image();
+  im.onload = () => { imgs[slot] = im; previews[slot].src = dataUrl; };
+  im.src = dataUrl;
+}
+
+// Обрезаем по центру до квадрата и уменьшаем, чтобы в хранилище лежало несколько КБ
+async function photoToDataUrl(file) {
+  const bmp = await createImageBitmap(file);
+  const side = Math.min(bmp.width, bmp.height);
+  const c = document.createElement("canvas");
+  c.width = c.height = PHOTO_PX;
+  c.getContext("2d").drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, PHOTO_PX, PHOTO_PX);
+  bmp.close && bmp.close();
+  return c.toDataURL("image/jpeg", 0.85);
+}
+
+document.querySelectorAll("input[type=file]").forEach((input) => {
+  input.addEventListener("change", async () => {
+    const file = input.files && input.files[0];
+    const slot = input.dataset.slot;
+    input.value = "";
+    if (!file) return;
+    try {
+      const url = await photoToDataUrl(file);
+      store.set(slot, url);
+      applyPhoto(slot, url);
+      haptic("light");
+    } catch (_) {
+      say("Не удалось открыть фото, попробуй другое");
+    }
+  });
+});
+document.querySelectorAll("button[data-clear]").forEach((b) => {
+  b.addEventListener("click", () => {
+    const slot = b.dataset.clear;
+    store.del(slot);
+    applyPhoto(slot, null);
+    b.blur();
+  });
+});
+applyPhoto("player", store.get("player"));
+applyPhoto("target", store.get("target"));
+
+// Рисует фото, обрезая по центру под нужное соотношение сторон, со скруглением
+function drawPhoto(im, x, y, w, h, r) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+  ctx.clip();
+  const k = Math.max(w / im.width, h / im.height);
+  const sw = w / k, sh = h / k;
+  ctx.drawImage(im, (im.width - sw) / 2, (im.height - sh) / 2, sw, sh, x, y, w, h);
+  ctx.restore();
+}
 
 // ───────────── Состояние ─────────────
 let state = "ready"; // ready | run | over
@@ -76,19 +181,22 @@ try { hi = +localStorage.getItem("runner_hi") || 0; } catch (_) { hi = 0; }
 
 function reset() {
   player = { x: 70, feet: GROUND, vy: 0, duck: false, ground: true, invuln: 0 };
-  revived = false;
-  reviveBtn.classList.add("hidden");
   obstacles = [];
   speed = SPEED_START;
   score = 0;
   distance = 0;
   spawnIn = 500;
   t = 0;
+  revived = false;
+  reviveBtn.classList.add("hidden");
 }
 reset();
 
 const playerH = () => (player.duck && player.ground ? DUCK_H : SPRITE_H);
 const playerBox = () => ({ x: player.x + 6, y: player.feet - playerH() + 4, w: SPRITE_W - 12, h: playerH() - 6 });
+
+// Расстояние до цели: всегда уменьшается, но никогда не доходит до нуля
+const gapMeters = () => Math.max(1, Math.round(1000 / (1 + score / 150)));
 
 // ───────────── Ввод ─────────────
 function jump() {
@@ -109,6 +217,7 @@ function setDuck(v) { player.duck = v; }
 
 addEventListener("keydown", (e) => {
   if (e.repeat) return;
+  if (e.target.closest && e.target.closest("#setup")) return;
   if (["Space", "ArrowUp", "KeyW"].includes(e.code)) { e.preventDefault(); jump(); }
   if (["ArrowDown", "KeyS"].includes(e.code)) { e.preventDefault(); if (state !== "run") start(); else setDuck(true); }
 });
@@ -246,10 +355,15 @@ function drawPlayer() {
   const x = player.x, y = player.feet - h;
   const duck = player.duck && player.ground;
 
-  if (duck && spriteDuck.ok) { ctx.drawImage(spriteDuck.img, x, y, SPRITE_W, h); return; }
-  if (sprite.ok) { ctx.drawImage(sprite.img, x, y, SPRITE_W, h); return; }
+  if (imgs.player) {
+    drawPhoto(imgs.player, x, y, SPRITE_W, h, 10);
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x + 1, y + 1, SPRITE_W - 2, h - 2);
+    return;
+  }
 
-  // Запасной персонаж, пока нет player.png
+  // Запасной персонаж, пока фото не загружено
   ctx.fillStyle = "#3d5a80";
   ctx.fillRect(x, y, SPRITE_W, h);
   ctx.fillStyle = "#fff";
@@ -262,6 +376,61 @@ function drawPlayer() {
     ctx.fillRect(x + 8, y + h - 2, 10, step ? 2 : 6);
     ctx.fillRect(x + 28, y + h - 2, 10, step ? 6 : 2);
   }
+}
+
+// Цель летит справа и постепенно «приближается», но игрок её не догонит
+function drawTarget() {
+  const close = 120 * (1 - 1 / (1 + score / 400)); // 0..120 px
+  const x = W - 90 - close + Math.sin(t * 1.3) * 6;
+  const y = GROUND - 130 + Math.sin(t * 3) * 12;
+  const r = TARGET_SIZE / 2;
+  const cx = x + r, cy = y + r;
+
+  // Полоски скорости слева
+  ctx.strokeStyle = "rgba(58,58,58,.35)";
+  ctx.lineWidth = 3;
+  for (let i = 0; i < 3; i++) {
+    const ly = cy - 12 + i * 12;
+    const len = 22 + ((Math.floor(t * 10) + i) % 3) * 8;
+    ctx.beginPath();
+    ctx.moveTo(x - 6, ly);
+    ctx.lineTo(x - 6 - len, ly);
+    ctx.stroke();
+  }
+
+  // Крылышки
+  const flap = Math.sin(t * 14) * 8;
+  ctx.fillStyle = "#fff";
+  ctx.strokeStyle = "#c9c4a8";
+  ctx.lineWidth = 2;
+  for (const dir of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(cx + dir * (r + 6), cy - 6 - flap * 0.5, 12, 6 + Math.abs(flap) * 0.4, dir * -0.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  // Сам спрайт: круг
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.clip();
+  if (imgs.target) {
+    ctx.drawImage(imgs.target, x, y, TARGET_SIZE, TARGET_SIZE);
+  } else {
+    ctx.fillStyle = "#f2c14e";
+    ctx.fillRect(x, y, TARGET_SIZE, TARGET_SIZE);
+    ctx.fillStyle = "#3a3a3a";
+    ctx.font = "bold 28px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("?", cx, cy + 10);
+  }
+  ctx.restore();
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
 }
 
 function drawObstacle(o) {
@@ -302,24 +471,28 @@ function draw() {
     ctx.fillRect(x + 38, GROUND + 22, 8, 2);
   }
 
+  drawTarget();
   obstacles.forEach(drawObstacle);
   drawPlayer();
 
-  // Счёт
+  // Счёт и расстояние до цели
   ctx.fillStyle = "#3a3a3a";
   ctx.font = "bold 20px monospace";
   ctx.textAlign = "right";
   ctx.fillText("HI " + String(Math.floor(hi)).padStart(5, "0") + "  " + String(Math.floor(score)).padStart(5, "0"), W - 14, 28);
+  ctx.textAlign = "left";
+  ctx.font = "bold 16px sans-serif";
+  ctx.fillText("До цели: " + gapMeters() + " м", 14, 28);
 
   ctx.textAlign = "center";
   if (state === "ready") {
     ctx.font = "bold 26px sans-serif";
-    ctx.fillText("Тап или Пробел — старт", W / 2, 110);
+    ctx.fillText("Догони его! Тап или Пробел — старт", W / 2, 110);
   } else if (state === "over") {
     ctx.font = "bold 34px sans-serif";
-    ctx.fillText("Игра окончена", W / 2, 100);
+    ctx.fillText("Почти догнал!", W / 2, 90);
     ctx.font = "18px sans-serif";
-    ctx.fillText("Тап — ещё раз", W / 2, 132);
+    ctx.fillText("Осталось " + gapMeters() + " м. Тап — ещё раз", W / 2, 124);
   }
 }
 
