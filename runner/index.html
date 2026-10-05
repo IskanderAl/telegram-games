@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Раннер</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
+  <style>
+    #wrap { position: relative; }
+    #revive {
+      position: absolute; left: 50%; top: 58%; transform: translateX(-50%);
+      border: 0; border-radius: 12px; background: #7b5cff; color: #fff;
+      font: bold 16px sans-serif; padding: 12px 20px; box-shadow: 0 4px 0 #5238c9;
+    }
+    #revive:active { transform: translateX(-50%) translateY(3px); box-shadow: 0 1px 0 #5238c9; }
+    #revive:disabled { opacity: .5; }
+    .hidden { display: none; }
+    #msg { position: absolute; left: 0; right: 0; top: 8px; text-align: center; color: #3a3a3a; font: 14px sans-serif; }
+    .demo-ad { position: fixed; inset: 0; background: #111; color: #fff; z-index: 40; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; font: 16px sans-serif; text-align: center; padding: 24px; }
+    html, body { margin: 0; height: 100%; background: #1b1d2a; overscroll-behavior: none; }
+    body { display: flex; align-items: center; justify-content: center; }
+    #wrap { width: 100%; max-width: 800px; }
+    canvas { width: 100%; display: block; background: #f4f1de; touch-action: none; user-select: none; image-rendering: pixelated; }
+    p { color: #8b90ad; font: 13px sans-serif; text-align: center; margin: 10px 8px 0; }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="c" width="800" height="300"></canvas>
+    <button id="revive" class="hidden" type="button">📺 Воскреснуть (реклама)</button>
+    <div id="msg" class="hidden"></div>
+    <p>Прыжок: тап по верху / Пробел / ↑ &nbsp;·&nbsp; Присесть: зажать низ экрана / ↓</p>
+  </div>
+
+<script>
+"use strict";
+
+// ───────────── Telegram ─────────────
+const tg = window.Telegram && window.Telegram.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+const haptic = (k) => { try { tg && tg.HapticFeedback.impactOccurred(k); } catch (_) {} };
+
+// ───────────── Настройки ─────────────
+const W = 800, H = 300, GROUND = 250;
+const GRAVITY = 2400, JUMP_V = -820, FAST_FALL = 2.2;
+const SPEED_START = 320, SPEED_MAX = 760, SPEED_GROWTH = 0.1;
+
+// Block ID из кабинета Adsgram (partner.adsgram.ai). Пусто = демо-режим с фейковой рекламой.
+const ADSGRAM_BLOCK_ID = "";
+const REVIVE_INVULN_SEC = 2;
+const REVIVE_CLEAR_PX = 450; // сколько пикселей впереди очищается от препятствий
+
+// Спрайт: положите player.png (и по желанию player_duck.png) рядом с этим файлом
+const SPRITE_W = 48, SPRITE_H = 60, DUCK_H = 32;
+const sprite = loadImg("player.png");
+const spriteDuck = loadImg("player_duck.png");
+function loadImg(src) {
+  const o = { img: new Image(), ok: false };
+  o.img.onload = () => (o.ok = true);
+  o.img.src = src;
+  return o;
+}
+
+const cv = document.getElementById("c");
+const ctx = cv.getContext("2d");
+
+// ───────────── Состояние ─────────────
+let state = "ready"; // ready | run | over
+let player, obstacles, speed, score, distance, spawnIn, hi, t;
+let revived = false, adBusy = false;
+const reviveBtn = document.getElementById("revive");
+const msgEl = document.getElementById("msg");
+try { hi = +localStorage.getItem("runner_hi") || 0; } catch (_) { hi = 0; }
+
+function reset() {
+  player = { x: 70, feet: GROUND, vy: 0, duck: false, ground: true, invuln: 0 };
+  revived = false;
+  reviveBtn.classList.add("hidden");
+  obstacles = [];
+  speed = SPEED_START;
+  score = 0;
+  distance = 0;
+  spawnIn = 500;
+  t = 0;
+}
+reset();
+
+const playerH = () => (player.duck && player.ground ? DUCK_H : SPRITE_H);
+const playerBox = () => ({ x: player.x + 6, y: player.feet - playerH() + 4, w: SPRITE_W - 12, h: playerH() - 6 });
+
+// ───────────── Ввод ─────────────
+function jump() {
+  if (state !== "run") { start(); return; }
+  if (player.ground) {
+    player.vy = JUMP_V;
+    player.ground = false;
+    haptic("light");
+  }
+}
+function start() {
+  if (adBusy) return;
+  if (state === "over" && t < 0.4) return; // защита от случайного рестарта
+  reset();
+  state = "run";
+}
+function setDuck(v) { player.duck = v; }
+
+addEventListener("keydown", (e) => {
+  if (e.repeat) return;
+  if (["Space", "ArrowUp", "KeyW"].includes(e.code)) { e.preventDefault(); jump(); }
+  if (["ArrowDown", "KeyS"].includes(e.code)) { e.preventDefault(); if (state !== "run") start(); else setDuck(true); }
+});
+addEventListener("keyup", (e) => {
+  if (["ArrowDown", "KeyS"].includes(e.code)) setDuck(false);
+});
+
+// Тач/мышь: нижняя треть — присесть (удерживая), остальное — прыжок
+cv.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  const r = cv.getBoundingClientRect();
+  const lower = (e.clientY - r.top) / r.height > 0.66;
+  if (state !== "run") { start(); return; }
+  if (lower) setDuck(true); else jump();
+});
+const release = () => setDuck(false);
+cv.addEventListener("pointerup", release);
+cv.addEventListener("pointercancel", release);
+cv.addEventListener("pointerleave", release);
+
+// ───────────── Логика ─────────────
+function spawn() {
+  const birdsAllowed = score > 250;
+  if (birdsAllowed && Math.random() < 0.35) {
+    // Птица на уровне головы стоящего: пробежать нельзя — надо присесть или перепрыгнуть
+    obstacles.push({ type: "bird", x: W + 20, w: 46, h: 26, y: GROUND - 34 - 26, flap: 0 });
+  } else {
+    const n = Math.random() < 0.3 ? 2 : 1; // иногда двойной кактус
+    const w = 22 * n + (n - 1) * 6;
+    const h = 40 + Math.random() * 28;
+    obstacles.push({ type: "cactus", x: W + 20, w, h, y: GROUND - h, n });
+  }
+  spawnIn = speed * (0.85 + Math.random() * 0.8) + 120;
+}
+
+const hit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+
+function update(dt) {
+  t += dt;
+  if (state !== "run") return;
+
+  speed = Math.min(SPEED_MAX, SPEED_START + score * SPEED_GROWTH);
+  distance += speed * dt;
+  score = distance / 10;
+
+  // Физика игрока
+  if (!player.ground) {
+    player.vy += GRAVITY * (player.duck ? FAST_FALL : 1) * dt;
+    player.feet += player.vy * dt;
+    if (player.feet >= GROUND) { player.feet = GROUND; player.vy = 0; player.ground = true; }
+  }
+
+  // Препятствия
+  spawnIn -= speed * dt;
+  if (spawnIn <= 0) spawn();
+  for (const o of obstacles) {
+    o.x -= speed * dt;
+    if (o.type === "bird") o.flap += dt * 10;
+  }
+  obstacles = obstacles.filter((o) => o.x + o.w > -20);
+
+  const pb = playerBox();
+  if (player.invuln > 0) player.invuln -= dt;
+  else if (obstacles.some((o) => hit(pb, o))) gameOver();
+}
+
+// ───────────── Воскрешение за рекламу ─────────────
+function showRewardedAd() {
+  if (window.Adsgram && ADSGRAM_BLOCK_ID) {
+    const controller = window.Adsgram.init({ blockId: ADSGRAM_BLOCK_ID });
+    // resolve — досмотрел до конца; reject — пропустил, нет рекламы или ошибка
+    return controller.show().then(() => true, () => false);
+  }
+  return demoAd();
+}
+
+// Демо-режим для локальной разработки, когда blockId не задан
+function demoAd() {
+  return new Promise((resolve) => {
+    const d = document.createElement("div");
+    d.className = "demo-ad";
+    d.innerHTML = '<div style="font-size:48px">📺</div><div>Демо-реклама (задайте ADSGRAM_BLOCK_ID)</div><div class="left"></div>';
+    document.body.appendChild(d);
+    let left = 3;
+    const tick = () => {
+      d.querySelector(".left").textContent = "Награда через " + left + " c";
+      if (left-- <= 0) { d.remove(); resolve(true); } else setTimeout(tick, 1000);
+    };
+    tick();
+  });
+}
+
+function say(text) {
+  msgEl.textContent = text;
+  msgEl.classList.remove("hidden");
+  setTimeout(() => msgEl.classList.add("hidden"), 2200);
+}
+
+async function revive() {
+  if (adBusy || state !== "over" || revived) return;
+  adBusy = true;
+  reviveBtn.disabled = true;
+  try {
+    const ok = await showRewardedAd();
+    if (!ok) { say("Реклама недоступна или пропущена — воскрешения нет"); return; }
+    revived = true;
+    reviveBtn.classList.add("hidden");
+    obstacles = obstacles.filter((o) => o.x > player.x + REVIVE_CLEAR_PX);
+    spawnIn = Math.max(spawnIn, 400);
+    Object.assign(player, { feet: GROUND, vy: 0, ground: true, duck: false, invuln: REVIVE_INVULN_SEC });
+    state = "run";
+    haptic("medium");
+  } finally {
+    adBusy = false;
+    reviveBtn.disabled = false;
+  }
+}
+reviveBtn.addEventListener("click", revive);
+
+function gameOver() {
+  state = "over";
+  t = 0;
+  haptic("heavy");
+  if (!revived) reviveBtn.classList.remove("hidden");
+  if (score > hi) {
+    hi = score;
+    try { localStorage.setItem("runner_hi", String(Math.floor(hi))); } catch (_) {}
+  }
+}
+
+// ───────────── Отрисовка ─────────────
+function drawPlayer() {
+  if (player.invuln > 0 && Math.floor(t * 12) % 2) return; // мигание при неуязвимости
+  const h = playerH();
+  const x = player.x, y = player.feet - h;
+  const duck = player.duck && player.ground;
+
+  if (duck && spriteDuck.ok) { ctx.drawImage(spriteDuck.img, x, y, SPRITE_W, h); return; }
+  if (sprite.ok) { ctx.drawImage(sprite.img, x, y, SPRITE_W, h); return; }
+
+  // Запасной персонаж, пока нет player.png
+  ctx.fillStyle = "#3d5a80";
+  ctx.fillRect(x, y, SPRITE_W, h);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(x + SPRITE_W - 18, y + 6, 10, 10);
+  ctx.fillStyle = "#111";
+  ctx.fillRect(x + SPRITE_W - 12, y + 9, 5, 5);
+  if (!duck) {
+    ctx.fillStyle = "#293241";
+    const step = player.ground && state === "run" ? Math.floor(t * 12) % 2 : 0;
+    ctx.fillRect(x + 8, y + h - 2, 10, step ? 2 : 6);
+    ctx.fillRect(x + 28, y + h - 2, 10, step ? 6 : 2);
+  }
+}
+
+function drawObstacle(o) {
+  if (o.type === "cactus") {
+    ctx.fillStyle = "#2d6a4f";
+    const cw = 22;
+    for (let i = 0; i < o.n; i++) {
+      const cx = o.x + i * (cw + 6);
+      ctx.fillRect(cx + 7, o.y, 8, o.h);
+      ctx.fillRect(cx, o.y + o.h * 0.35, 8, 6);
+      ctx.fillRect(cx, o.y + o.h * 0.2, 6, o.h * 0.2);
+      ctx.fillRect(cx + 14, o.y + o.h * 0.5, 8, 6);
+      ctx.fillRect(cx + 16, o.y + o.h * 0.3, 6, o.h * 0.25);
+    }
+  } else {
+    const up = Math.sin(o.flap) > 0;
+    ctx.fillStyle = "#6d4c41";
+    ctx.fillRect(o.x + 8, o.y + 8, 30, 12);
+    ctx.fillRect(o.x, o.y + 10, 10, 6);
+    ctx.fillStyle = "#8d6e63";
+    ctx.fillRect(o.x + 16, up ? o.y - 2 : o.y + 18, 16, 10);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(o.x + 4, o.y + 10, 3, 3);
+  }
+}
+
+function draw() {
+  ctx.fillStyle = "#f4f1de";
+  ctx.fillRect(0, 0, W, H);
+
+  // Земля со «скроллом»
+  ctx.fillStyle = "#3a3a3a";
+  ctx.fillRect(0, GROUND, W, 2);
+  ctx.fillStyle = "#9a9a9a";
+  const off = distance % 60;
+  for (let x = -off; x < W; x += 60) {
+    ctx.fillRect(x + 10, GROUND + 10, 14, 2);
+    ctx.fillRect(x + 38, GROUND + 22, 8, 2);
+  }
+
+  obstacles.forEach(drawObstacle);
+  drawPlayer();
+
+  // Счёт
+  ctx.fillStyle = "#3a3a3a";
+  ctx.font = "bold 20px monospace";
+  ctx.textAlign = "right";
+  ctx.fillText("HI " + String(Math.floor(hi)).padStart(5, "0") + "  " + String(Math.floor(score)).padStart(5, "0"), W - 14, 28);
+
+  ctx.textAlign = "center";
+  if (state === "ready") {
+    ctx.font = "bold 26px sans-serif";
+    ctx.fillText("Тап или Пробел — старт", W / 2, 110);
+  } else if (state === "over") {
+    ctx.font = "bold 34px sans-serif";
+    ctx.fillText("Игра окончена", W / 2, 100);
+    ctx.font = "18px sans-serif";
+    ctx.fillText("Тап — ещё раз", W / 2, 132);
+  }
+}
+
+// ───────────── Цикл ─────────────
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
