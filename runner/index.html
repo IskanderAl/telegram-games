@@ -30,6 +30,20 @@
     #share:active { transform: translateX(-50%) translateY(3px); box-shadow: 0 1px 0 #1b82b8; }
     #msg { position: absolute; left: 0; right: 0; top: 8px; text-align: center; color: #3a3a3a; font: 14px sans-serif; }
 
+    #lb-open {
+      display: block; width: calc(100% - 16px); margin: 12px 8px 0; border: 0; border-radius: 12px;
+      background: #f2c14e; color: #3a2b00; font: bold 15px sans-serif; padding: 12px;
+    }
+    #lb { position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 30; display: flex; align-items: center; justify-content: center; padding: 16px; }
+    #lb .panel { background: #262a3d; color: #e6e8f5; border-radius: 16px; width: 100%; max-width: 420px; max-height: 80vh; overflow-y: auto; padding: 16px; font: 14px sans-serif; }
+    #lb h2 { margin: 0 0 12px; font-size: 18px; display: flex; justify-content: space-between; align-items: center; }
+    #lb h2 button { background: none; border: 0; color: #e6e8f5; font-size: 20px; }
+    #lb .row { display: flex; gap: 10px; padding: 8px 10px; border-radius: 8px; }
+    #lb .row:nth-child(odd) { background: rgba(255,255,255,.04); }
+    #lb .row.me { background: rgba(123,92,255,.35); font-weight: 700; }
+    #lb .rank { width: 28px; color: #8b90ad; }
+    #lb .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #lb .note { color: #8b90ad; text-align: center; padding: 12px 0; }
     #setup { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 8px 0; }
     .card { background: #262a3d; border-radius: 12px; padding: 10px; display: flex; gap: 10px; align-items: center; color: #e6e8f5; font: 13px sans-serif; }
     .card img { width: 56px; height: 56px; border-radius: 12px; object-fit: cover; background: #3a3f5a; flex: none; }
@@ -53,6 +67,8 @@
       <button id="share" class="hidden" type="button">📤 Поделиться результатом</button>
       <div id="msg" class="hidden"></div>
     </div>
+
+    <button id="lb-open" type="button">🏆 Рейтинг игроков</button>
 
     <div id="setup">
       <div class="card">
@@ -81,6 +97,8 @@
     <p>Фото хранятся только на твоём устройстве и никуда не отправляются.</p>
   </div>
 
+<div id="lb" class="hidden"><div class="panel"><h2><span>🏆 Рейтинг</span><button id="lb-close" type="button">✕</button></h2><div id="lb-body"></div></div></div>
+
 <script src="../config.js"></script>
 <script>
 "use strict";
@@ -103,6 +121,9 @@ const PHOTO_QUALITY = 0.92;
 
 // Block ID из кабинета Adsgram (partner.adsgram.ai). Пусто = демо-режим с фейковой рекламой.
 const ADSGRAM_BLOCK_ID = (window.APP_CONFIG && window.APP_CONFIG.ADSGRAM_BLOCK_ID) || "";
+// Серверная проверка награды: Adsgram шлёт GET на /api/reward, клиент подтверждает через /api/claim.
+// Включайте (SERVER_REWARD: true в config.js), когда Reward URL блока настроен и проверен.
+const SERVER_REWARD = !!(window.APP_CONFIG && window.APP_CONFIG.SERVER_REWARD);
 const REVIVE_INVULN_SEC = 2;
 const REVIVE_CLEAR_PX = 450; // сколько пикселей впереди очищается от препятствий
 
@@ -306,6 +327,64 @@ function update(dt) {
   else if (obstacles.some((o) => hit(pb, o))) gameOver();
 }
 
+// ───────────── Сервер: рейтинг и подтверждение награды ─────────────
+const INIT_DATA = (tg && tg.initData) || ""; // пусто вне Telegram — серверные функции отключены
+async function api(path, body) {
+  try {
+    const res = await fetch("/api" + path, {
+      method: body === undefined ? "GET" : "POST",
+      headers: { "content-type": "application/json", "x-init-data": INIT_DATA },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return { status: res.status, data: await res.json().catch(() => null) };
+  } catch (_) {
+    return { status: 0, data: null };
+  }
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Adsgram может прислать колбэк с небольшой задержкой — несколько попыток
+async function confirmReward() {
+  for (let i = 0; i < 6; i++) {
+    const r = await api("/claim", {});
+    if (r.data && r.data.ok) return true;
+    if (r.status && r.status !== 404) return false; // ошибка авторизации/устаревшая награда — повторять бессмысленно
+    await sleep(700);
+  }
+  return false;
+}
+
+const lbEl = document.getElementById("lb");
+const lbBody = document.getElementById("lb-body");
+document.getElementById("lb-close").addEventListener("click", () => lbEl.classList.add("hidden"));
+lbEl.addEventListener("click", (e) => { if (e.target === lbEl) lbEl.classList.add("hidden"); });
+document.getElementById("lb-open").addEventListener("click", async () => {
+  lbEl.classList.remove("hidden");
+  if (!INIT_DATA) { lbBody.innerHTML = '<div class="note">Рейтинг доступен при запуске из Telegram</div>'; return; }
+  lbBody.innerHTML = '<div class="note">Загрузка…</div>';
+  const r = await api("/leaderboard");
+  if (!r.data || !r.data.top) { lbBody.innerHTML = '<div class="note">Не удалось загрузить рейтинг</div>'; return; }
+  lbBody.textContent = "";
+  if (!r.data.top.length) lbBody.innerHTML = '<div class="note">Пока никого нет — стань первым!</div>';
+  for (const e of r.data.top) {
+    const row = document.createElement("div");
+    row.className = "row" + (e.me ? " me" : "");
+    for (const [cls, text] of [["rank", e.rank], ["name", e.name], ["score", e.score]]) {
+      const s = document.createElement("span");
+      s.className = cls;
+      s.textContent = text; // textContent — имена игроков не интерпретируются как HTML
+      row.appendChild(s);
+    }
+    lbBody.appendChild(row);
+  }
+  if (r.data.mine && !r.data.top.some((e) => e.me)) {
+    const n = document.createElement("div");
+    n.className = "note";
+    n.textContent = "Твоё место: " + r.data.mine.rank + " (" + r.data.mine.score + ")";
+    lbBody.appendChild(n);
+  }
+});
+
 // ───────────── Воскрешение за рекламу ─────────────
 function showRewardedAd() {
   if (window.Adsgram && ADSGRAM_BLOCK_ID) {
@@ -345,6 +424,7 @@ async function revive() {
   try {
     const ok = await showRewardedAd();
     if (!ok) { say("Реклама недоступна или пропущена — воскрешения нет"); return; }
+    if (SERVER_REWARD && INIT_DATA && !(await confirmReward())) { say("Не удалось подтвердить просмотр рекламы, попробуй ещё раз"); return; }
     revived = true;
     reviveBtn.classList.add("hidden");
     shareBtn.classList.add("hidden");
@@ -375,6 +455,7 @@ function gameOver() {
   haptic("heavy");
   shareBtn.classList.remove("hidden");
   if (!revived) reviveBtn.classList.remove("hidden");
+  if (INIT_DATA) api("/leaderboard", { score: Math.floor(score) });
   if (score > hi) {
     hi = score;
     try { localStorage.setItem("runner_hi", String(Math.floor(hi))); } catch (_) {}

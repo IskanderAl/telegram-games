@@ -10,3 +10,4 @@ runner/player.png
 runner/player_duck.png
 dist/
 .netlify/
+.reward-url.txt
