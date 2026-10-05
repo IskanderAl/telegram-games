@@ -39,10 +39,19 @@
     #lb .rank { width: 28px; color: #8b90ad; }
     #lb .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #lb .note { color: #8b90ad; text-align: center; padding: 12px 0; }
+    #duck {
+      display: block; width: calc(100% - 16px); margin: 10px 8px 0; border: 0; border-radius: 14px;
+      background: #3d5a80; color: #fff; font: bold 18px sans-serif; padding: 18px 12px;
+      box-shadow: 0 5px 0 #28405f; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+    }
+    #duck.held, #duck:active { transform: translateY(4px); box-shadow: 0 1px 0 #28405f; background: #4a6d99; }
+    #styles { display: flex; gap: 8px; margin: 12px 8px 0; }
+    #styles button { flex: 1; border: 2px solid transparent; border-radius: 12px; background: #262a3d; color: #e6e8f5; font: 600 14px sans-serif; padding: 10px 4px; }
+    #styles button.active { border-color: #7b5cff; background: #34385a; }
     #setup { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 8px 0; }
     .card { background: #262a3d; border-radius: 12px; padding: 10px; display: flex; gap: 10px; align-items: center; color: #e6e8f5; font: 13px sans-serif; }
     .card img { width: 56px; height: 56px; border-radius: 12px; object-fit: cover; background: #3a3f5a; flex: none; }
-    .card .col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .card .col { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
     .card b { font-size: 14px; }
     .card .btns { display: flex; gap: 6px; flex-wrap: wrap; }
     .pick, .card button {
@@ -68,6 +77,14 @@
         </div>
       </div>
       <div id="msg" class="hidden"></div>
+    </div>
+
+    <button id="duck" type="button">⬇ Присесть (держи)</button>
+
+    <div id="styles">
+      <button type="button" data-style="classic">🌵 Классика</button>
+      <button type="button" data-style="svo">🪖 СВО</button>
+      <button type="button" data-style="kz">🐎 Казахстан</button>
     </div>
 
     <button id="lb-open" type="button">🏆 Рейтинг игроков</button>
@@ -97,7 +114,7 @@
       </div>
     </div>
 
-    <p>Прыжок: тап по верху / Пробел / ↑ &nbsp;·&nbsp; Присесть: зажать низ экрана / ↓</p>
+    <p>Прыжок: тап по полю / Пробел / ↑ &nbsp;·&nbsp; Присесть: держать кнопку / ↓</p>
     <p id="group-note" class="hidden">👥 Игра из чата: после забега можно опубликовать карточку результата (фото и имена) в группе кнопкой «Опубликовать».</p>
     <p>Фото хранятся только на твоём устройстве. Исключение — кнопка «Опубликовать в группе»: она отправляет карточку результата в чат.</p>
   </div>
@@ -285,35 +302,111 @@ addEventListener("keyup", (e) => {
   if (["ArrowDown", "KeyS"].includes(e.code)) setDuck(false);
 });
 
-// Тач/мышь: нижняя треть — присесть (удерживая), остальное — прыжок
+// Тач/мышь: тап в любом месте поля — прыжок (или старт). Присесть — отдельная кнопка, пока она зажата.
 cv.addEventListener("pointerdown", (e) => {
   e.preventDefault();
-  const r = cv.getBoundingClientRect();
-  const lower = (e.clientY - r.top) / r.height > 0.66;
-  if (state !== "run") { start(); return; }
-  if (lower) setDuck(true); else jump();
+  jump();
 });
-const release = () => setDuck(false);
-cv.addEventListener("pointerup", release);
-cv.addEventListener("pointercancel", release);
-cv.addEventListener("pointerleave", release);
+
+const duckBtn = document.getElementById("duck");
+const releaseDuck = () => { setDuck(false); duckBtn.classList.remove("held"); };
+duckBtn.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  try { duckBtn.setPointerCapture(e.pointerId); } catch (_) {} // отпускание поймаем, даже если палец съехал с кнопки
+  if (state === "run") { setDuck(true); duckBtn.classList.add("held"); haptic("light"); }
+});
+for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) duckBtn.addEventListener(ev, releaseDuck);
+duckBtn.addEventListener("contextmenu", (e) => e.preventDefault());
+
+// ───────────── Стили (темы препятствий) ─────────────
+// Спрайты нарисованы в tools/sprites/*.sprite.txt, кадры лежат в строку: fw×fh — размер одного кадра в пикселях спрайта
+const SPR = {
+  svo_soldier:   { fw: 14, fh: 20, frames: 1, fps: 0 },
+  svo_tank:      { fw: 34, fh: 18, frames: 2, fps: 6 },
+  svo_drone:     { fw: 22, fh: 12, frames: 2, fps: 12 },
+  kz_horse:      { fw: 30, fh: 22, frames: 2, fps: 8 },
+  kz_tumbleweed: { fw: 16, fh: 16, frames: 1, fps: 0, roll: true },
+  kz_eagle:      { fw: 28, fh: 17, frames: 2, fps: 6 },
+};
+for (const [key, d] of Object.entries(SPR)) {
+  d.ok = false;
+  d.img = new Image();
+  d.img.onload = () => { d.ok = true; };
+  d.img.src = "sprites/" + key + ".png";
+}
+
+// scale — целый множитель (иначе пиксели будут разного размера); inset — отступы хитбокса от картинки: l, r, t, b
+const OBS = {
+  soldier: { spr: "svo_soldier",   scale: 3, inset: [8, 6, 4, 2] },   // слева ствол — на столкновение не считаем
+  tank:    { spr: "svo_tank",      scale: 3, inset: [42, 6, 4, 4] },  // длинный ствол не считаем
+  drone:   { spr: "svo_drone",     scale: 3, inset: [8, 8, 10, 8], air: true },
+  horse:   { spr: "kz_horse",      scale: 3, inset: [6, 12, 12, 4] },
+  weed:    { spr: "kz_tumbleweed", scale: 2, inset: [5, 5, 5, 5] },
+  eagle:   { spr: "kz_eagle",      scale: 3, inset: [10, 10, 14, 10], air: true },
+};
+
+// ground / air: пары [препятствие, вес]
+const STYLES = {
+  classic: { bg: "#f4f1de", line: "#3a3a3a", dash: "#9a9a9a", text: "#3a3a3a" },
+  svo: {
+    bg: "#dedccb", line: "#3a3f26", dash: "#8a8f6a", text: "#2b2f1a", backdrop: "ruins", far: "#c4c3ae",
+    ground: [["soldier", 6], ["tank", 4]], air: [["drone", 1]],
+  },
+  kz: {
+    bg: "#f7e8b8", line: "#6b4a1c", dash: "#c9a45a", text: "#4a3010", backdrop: "steppe", far: "#e6cd8a", near: "#d9b868",
+    ground: [["horse", 5], ["weed", 5]], air: [["eagle", 1]],
+  },
+};
+
+let styleId = (() => { try { const s = localStorage.getItem("runner_style"); return STYLES[s] ? s : "classic"; } catch (_) { return "classic"; } })();
+function setStyle(id) {
+  if (!STYLES[id]) return;
+  if (state === "run") { say("Стиль сменится после забега"); return; }
+  styleId = id;
+  try { localStorage.setItem("runner_style", id); } catch (_) {}
+  document.querySelectorAll("#styles button").forEach((b) => b.classList.toggle("active", b.dataset.style === id));
+  haptic("light");
+}
+document.querySelectorAll("#styles button").forEach((b) => b.addEventListener("click", () => setStyle(b.dataset.style)));
+document.querySelectorAll("#styles button").forEach((b) => b.classList.toggle("active", b.dataset.style === styleId));
+
+function pickWeighted(list) {
+  let r = Math.random() * list.reduce((s, [, w]) => s + w, 0);
+  for (const [k, w] of list) { if ((r -= w) < 0) return k; }
+  return list[0][0];
+}
 
 // ───────────── Логика ─────────────
 function spawn() {
-  const birdsAllowed = score > 250;
-  if (birdsAllowed && Math.random() < 0.35) {
-    // Птица на уровне головы стоящего: пробежать нельзя — надо присесть или перепрыгнуть
-    obstacles.push({ type: "bird", x: W + 20, w: 46, h: 26, y: GROUND - 34 - 26, flap: 0 });
+  const st = STYLES[styleId];
+  const airAllowed = score > 250 && Math.random() < 0.35;
+  if (!st.ground) {
+    if (airAllowed) {
+      // Птица на уровне головы стоящего: пробежать нельзя — надо присесть или перепрыгнуть
+      obstacles.push({ type: "bird", x: W + 20, w: 46, h: 26, y: GROUND - 34 - 26, flap: 0 });
+    } else {
+      const n = Math.random() < 0.3 ? 2 : 1; // иногда двойной кактус
+      const w = 22 * n + (n - 1) * 6;
+      const h = 40 + Math.random() * 28;
+      obstacles.push({ type: "cactus", x: W + 20, w, h, y: GROUND - h, n });
+    }
   } else {
-    const n = Math.random() < 0.3 ? 2 : 1; // иногда двойной кактус
-    const w = 22 * n + (n - 1) * 6;
-    const h = 40 + Math.random() * 28;
-    obstacles.push({ type: "cactus", x: W + 20, w, h, y: GROUND - h, n });
+    const def = OBS[pickWeighted(airAllowed ? st.air : st.ground)];
+    const s = SPR[def.spr];
+    const w = s.fw * def.scale, h = s.fh * def.scale;
+    // воздушные препятствия летят на уровне головы стоящего (низ — на 34 пикселя выше земли)
+    obstacles.push({ type: "spr", def, spr: s, x: W + 20, w, h, y: def.air ? GROUND - 34 - h : GROUND - h });
   }
   spawnIn = speed * (0.85 + Math.random() * 0.8) + 120;
 }
 
 const hit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+// Хитбокс препятствия: у спрайтовых — внутри картинки (без ствола, хвоста и т.п.)
+function hitbox(o) {
+  if (!o.def) return o;
+  const [l, r, tp, b] = o.def.inset;
+  return { x: o.x + l, y: o.y + tp, w: o.w - l - r, h: o.h - tp - b };
+}
 
 function update(dt) {
   t += dt;
@@ -341,7 +434,7 @@ function update(dt) {
 
   const pb = playerBox();
   if (player.invuln > 0) player.invuln -= dt;
-  else if (obstacles.some((o) => hit(pb, o))) gameOver();
+  else if (obstacles.some((o) => hit(pb, hitbox(o)))) gameOver();
 }
 
 // ───────────── Сервер: рейтинг и подтверждение награды ─────────────
@@ -633,6 +726,25 @@ function drawTarget() {
 }
 
 function drawObstacle(o) {
+  if (o.type === "spr") {
+    const s = o.spr;
+    if (!s.ok) return; // спрайт ещё грузится
+    const frame = s.frames > 1 ? Math.floor(t * s.fps) % s.frames : 0;
+    ctx.imageSmoothingEnabled = false; // пиксель-арт без размытия
+    if (s.roll) {
+      // Перекати-поле катится: угол зависит от пройденного пути, плюс небольшие подпрыгивания
+      const hop = Math.abs(Math.sin(o.x / 28)) * 6;
+      ctx.save();
+      ctx.translate(o.x + o.w / 2, o.y + o.h / 2 - hop);
+      ctx.rotate(-o.x / (o.w / 2));
+      ctx.drawImage(s.img, frame * s.fw, 0, s.fw, s.fh, -o.w / 2, -o.h / 2, o.w, o.h);
+      ctx.restore();
+    } else {
+      ctx.drawImage(s.img, frame * s.fw, 0, s.fw, s.fh, o.x, o.y, o.w, o.h);
+    }
+    ctx.imageSmoothingEnabled = true; // фото игрока и цели рисуются со сглаживанием
+    return;
+  }
   if (o.type === "cactus") {
     ctx.fillStyle = "#2d6a4f";
     const cw = 22;
@@ -656,14 +768,52 @@ function drawObstacle(o) {
   }
 }
 
+// Дальний план: параллакс, зависит от стиля
+function drawBackdrop(st) {
+  if (st.backdrop === "ruins") {
+    // силуэты разрушенных зданий
+    const step = 56, off = (distance * 0.2) % step, base = Math.floor((distance * 0.2) / step);
+    ctx.fillStyle = st.far;
+    for (let i = -1; i < W / step + 2; i++) {
+      const k = base + i;
+      const h = 30 + ((k * 37) % 5) * 14;
+      const x = i * step - off;
+      ctx.fillRect(x, GROUND - h, step - 8, h);
+      ctx.fillRect(x + (k % 2 ? 6 : 24), GROUND - h - 10, 10, 10); // обломанный выступ
+      ctx.fillStyle = st.bg;
+      ctx.fillRect(x + 10, GROUND - h + 10, 8, 10); // оконный проём
+      ctx.fillStyle = st.far;
+    }
+  } else if (st.backdrop === "steppe") {
+    // холмы степи и солнце
+    ctx.fillStyle = "#f3d27a";
+    ctx.beginPath(); ctx.arc(W - 110, 70, 34, 0, Math.PI * 2); ctx.fill();
+    const hill = (color, amp, speed, base) => {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(0, GROUND);
+      for (let x = 0; x <= W; x += 8) {
+        const p = x + distance * speed;
+        ctx.lineTo(x, GROUND - base - amp * Math.sin(p / 90) - amp * 0.5 * Math.sin(p / 37));
+      }
+      ctx.lineTo(W, GROUND);
+      ctx.fill();
+    };
+    hill(st.far, 16, 0.12, 34);
+    hill(st.near, 10, 0.25, 14);
+  }
+}
+
 function draw() {
-  ctx.fillStyle = "#f4f1de";
+  const st = STYLES[styleId];
+  ctx.fillStyle = st.bg;
   ctx.fillRect(0, 0, W, H);
+  drawBackdrop(st);
 
   // Земля со «скроллом»
-  ctx.fillStyle = "#3a3a3a";
+  ctx.fillStyle = st.line;
   ctx.fillRect(0, GROUND, W, 2);
-  ctx.fillStyle = "#9a9a9a";
+  ctx.fillStyle = st.dash;
   const off = distance % 60;
   for (let x = -off; x < W; x += 60) {
     ctx.fillRect(x + 10, GROUND + 10, 14, 2);
@@ -675,7 +825,7 @@ function draw() {
   drawPlayer();
 
   // Счёт и расстояние до цели
-  ctx.fillStyle = "#3a3a3a";
+  ctx.fillStyle = st.text;
   ctx.font = "bold 20px monospace";
   ctx.textAlign = "right";
   ctx.fillText("HI " + String(Math.floor(hi)).padStart(5, "0") + "  " + String(Math.floor(score)).padStart(5, "0"), W - 14, 28);

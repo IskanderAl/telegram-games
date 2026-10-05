@@ -1,0 +1,23 @@
+name: kz_tumbleweed
+outline: #3a2a14
+ppu: 16
+palette:
+  . = transparent
+  a = #c9a45a
+  A = #9a7a3a
+  b = #e3c682
+  d = #6e5224
+frame idle:
+  ..............
+  ....aAabAa....
+  ...AabAdaAb...
+  ..aAbaAadAab..
+  .bAadAbaAbaAa.
+  .aAbAaAdaAbdA.
+  .AdaAbaAabAaa.
+  .aAbaAdAbaAdb.
+  .bAaAbaAadAba.
+  ..AbdaAbaAad..
+  ...aAbAaAbA...
+  ....AaAdAa....
+  ..............

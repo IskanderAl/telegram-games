@@ -11,3 +11,4 @@ runner/player_duck.png
 dist/
 .netlify/
 .reward-url.txt
+runner/sprites/*_preview.png
