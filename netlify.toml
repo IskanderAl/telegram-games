@@ -4,3 +4,24 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+
+# Telegram WebView кэширует агрессивно — страницы и конфиг всегда запрашиваем заново
+[[headers]]
+  for = "/config.js"
+  [headers.values]
+    Cache-Control = "no-store"
+
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/runner/*"
+  [headers.values]
+    Cache-Control = "no-cache"
