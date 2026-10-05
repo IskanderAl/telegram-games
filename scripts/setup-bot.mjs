@@ -23,7 +23,7 @@ async function call(method, payload) {
 await call("setWebhook", {
   url: SITE + "/api/bot",
   secret_token: secret,
-  allowed_updates: ["message", "callback_query"],
+  allowed_updates: ["message", "callback_query", "my_chat_member"],
   drop_pending_updates: true,
 });
 await call("setMyCommands", {

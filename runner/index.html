@@ -55,6 +55,8 @@
       padding: 6px 10px; cursor: pointer;
     }
     .card button { background: #3a3f5a; }
+    .nm { width: 100%; min-width: 0; border: 0; border-radius: 8px; background: #1b1d2a; color: #e6e8f5; font: 13px sans-serif; padding: 6px 8px; }
+    .nm::placeholder { color: #6b708c; }
 
     .demo-ad { position: fixed; inset: 0; background: #111; color: #fff; z-index: 40; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; font: 16px sans-serif; text-align: center; padding: 24px; }
   </style>
@@ -75,6 +77,7 @@
         <img id="prev-player" alt="">
         <div class="col">
           <b>Ты</b>
+          <input class="nm" id="name-player" maxlength="24" placeholder="Кем ты был?">
           <div class="btns">
             <label class="pick">Фото<input type="file" accept="image/*" data-slot="player" hidden></label>
             <button type="button" data-clear="player">Сброс</button>
@@ -85,6 +88,7 @@
         <img id="prev-target" alt="">
         <div class="col">
           <b>Кого догоняем</b>
+          <input class="nm" id="name-target" maxlength="24" placeholder="Кого догоняешь?">
           <div class="btns">
             <label class="pick">Фото<input type="file" accept="image/*" data-slot="target" hidden></label>
             <button type="button" data-clear="target">Сброс</button>
@@ -94,7 +98,8 @@
     </div>
 
     <p>Прыжок: тап по верху / Пробел / ↑ &nbsp;·&nbsp; Присесть: зажать низ экрана / ↓</p>
-    <p>Фото хранятся только на твоём устройстве и никуда не отправляются.</p>
+    <p id="group-note" class="hidden">👥 Игра из чата: после забега карточка результата (фото и имена) будет опубликована в группе.</p>
+    <p>Фото хранятся только на твоём устройстве. Исключение — игра из группового чата: карточка результата отправляется в этот чат.</p>
   </div>
 
 <div id="lb" class="hidden"><div class="panel"><h2><span>🏆 Рейтинг</span><button id="lb-close" type="button">✕</button></h2><div id="lb-body"></div></div></div>
@@ -194,6 +199,14 @@ document.querySelectorAll("button[data-clear]").forEach((b) => {
 applyPhoto("player", store.get("player"));
 applyPhoto("target", store.get("target"));
 
+// Имена: «кем был» и «кого догонял» — попадают в сообщение бота в группе
+const names = { player: store.get("name_player") || "", target: store.get("name_target") || "" };
+for (const slot of ["player", "target"]) {
+  const input = document.getElementById("name-" + slot);
+  input.value = names[slot];
+  input.addEventListener("input", () => { names[slot] = input.value.trim(); store.set("name_" + slot, names[slot]); });
+}
+
 // Рисует фото, обрезая по центру под нужное соотношение сторон, со скруглением
 function drawPhoto(im, x, y, w, h, r) {
   ctx.save();
@@ -253,6 +266,7 @@ function jump() {
 function start() {
   if (adBusy) return;
   if (state === "over" && t < 0.4) return; // защита от случайного рестарта
+  if (pendingResult) flushGroupResult();
   reset();
   state = "run";
 }
@@ -385,6 +399,63 @@ document.getElementById("lb-open").addEventListener("click", async () => {
   }
 });
 
+// ───────────── Групповая игра: карточка результата в чат ─────────────
+const START_PARAM = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || "";
+const GROUP_MODE = !!INIT_DATA && /^g(m?\d+)$/.test(START_PARAM);
+if (GROUP_MODE) document.getElementById("group-note").classList.remove("hidden");
+
+// Картинка: кем был (слева), кого догонял (справа), на сколько не догнал
+function buildResultCard(sc, gap) {
+  const c = document.createElement("canvas");
+  c.width = 600; c.height = 315;
+  const g = c.getContext("2d");
+  g.fillStyle = "#f4f1de"; g.fillRect(0, 0, 600, 315);
+  g.fillStyle = "#3a3a3a"; g.fillRect(0, 262, 600, 3);
+
+  const face = (im, cx, cy, r, bg, ch) => {
+    g.save();
+    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.clip();
+    if (im) g.drawImage(im, cx - r, cy - r, 2 * r, 2 * r);
+    else {
+      g.fillStyle = bg; g.fillRect(cx - r, cy - r, 2 * r, 2 * r);
+      g.fillStyle = "#fff"; g.font = "bold " + r + "px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+      g.fillText(ch, cx, cy);
+    }
+    g.restore();
+    g.strokeStyle = "#fff"; g.lineWidth = 5; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke();
+  };
+  const label = (text, cx, y, fallback) => {
+    g.fillStyle = "#2b2d42"; g.font = "bold 20px sans-serif"; g.textAlign = "center"; g.textBaseline = "alphabetic";
+    g.fillText(text || fallback, cx, y, 210);
+  };
+
+  // Полоски скорости между героями
+  g.strokeStyle = "rgba(58,58,58,.3)"; g.lineWidth = 5;
+  for (let i = 0; i < 3; i++) { g.beginPath(); g.moveTo(215, 150 + i * 22); g.lineTo(215 + 90 - i * 18, 150 + i * 22); g.stroke(); }
+
+  face(imgs.player, 110, 160, 72, "#3d5a80", "🙂");
+  face(imgs.target, 490, 100, 62, "#f2c14e", "?");
+  label(names.player, 110, 255, "Бегун");
+  label(names.target, 490, 195, "Недосягаемый");
+
+  g.fillStyle = "#2b2d42"; g.textAlign = "center";
+  g.font = "bold 30px sans-serif"; g.fillText("Не догнал на " + gap + " м", 300, 50);
+  g.font = "22px sans-serif"; g.fillStyle = "#5a5d78"; g.fillText("Счёт: " + sc, 300, 84);
+  return c.toDataURL("image/jpeg", 0.8).split(",")[1];
+}
+
+let pendingResult = null;
+let flushTimer = null;
+function flushGroupResult() {
+  clearTimeout(flushTimer);
+  const r = pendingResult;
+  pendingResult = null;
+  if (!r) return;
+  api("/group-result", {
+    score: r.score, gap: r.gap, playerName: names.player, targetName: names.target, image: buildResultCard(r.score, r.gap),
+  }).then((res) => { if (res.data && res.data.posted) say("📣 Результат отправлен в чат"); });
+}
+
 // ───────────── Воскрешение за рекламу ─────────────
 function showRewardedAd() {
   if (window.Adsgram && ADSGRAM_BLOCK_ID) {
@@ -426,6 +497,7 @@ async function revive() {
     if (!ok) { say("Реклама недоступна или пропущена — воскрешения нет"); return; }
     if (SERVER_REWARD && INIT_DATA && !(await confirmReward())) { say("Не удалось подтвердить просмотр рекламы, попробуй ещё раз"); return; }
     revived = true;
+    pendingResult = null; clearTimeout(flushTimer); // забег продолжается — результат ещё не финальный
     reviveBtn.classList.add("hidden");
     shareBtn.classList.add("hidden");
     obstacles = obstacles.filter((o) => o.x > player.x + REVIVE_CLEAR_PX);
@@ -456,6 +528,12 @@ function gameOver() {
   shareBtn.classList.remove("hidden");
   if (!revived) reviveBtn.classList.remove("hidden");
   if (INIT_DATA) api("/leaderboard", { score: Math.floor(score) });
+  if (GROUP_MODE) {
+    // Публикуем, когда забег точно закончен: игрок не стал воскресать (новый забег или 10 секунд ожидания)
+    pendingResult = { score: Math.floor(score), gap: gapMeters() };
+    clearTimeout(flushTimer);
+    flushTimer = setTimeout(flushGroupResult, 10000);
+  }
   if (score > hi) {
     hi = score;
     try { localStorage.setItem("runner_hi", String(Math.floor(hi))); } catch (_) {}

@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
+import { getStore } from "@netlify/blobs";
 import { json, safeEqual } from "../lib/auth.mjs";
+import { groupToken } from "../lib/groups.mjs";
+
+const BOT_USERNAME = "dream_runnerbot";
+const GAME_SHORT_NAME = "runner";
 
 // Секрет вебхука выводится из токена бота — отдельной переменной окружения не нужно.
 // Тот же расчёт делает scripts/setup-bot.mjs при регистрации вебхука.
@@ -29,6 +34,22 @@ function gamesMenu(chatId) {
   };
 }
 
+const isGroup = (chat) => chat && (chat.type === "group" || chat.type === "supergroup");
+
+// В группах web_app-кнопки недоступны, поэтому открываем игру прямой ссылкой с пометкой группы.
+// Бот запоминает группу: результаты можно отправлять только в известные ему чаты.
+async function greetGroup(chat) {
+  const token = groupToken(chat.id);
+  await getStore({ name: "groups", consistency: "strong" }).set("g:" + token, String(chat.id));
+  return tg("sendMessage", {
+    chat_id: chat.id,
+    text: "🏃 Играем в «Догони его!» Нажми кнопку — твой результат (кем был и кого догонял) появится здесь.",
+    reply_markup: {
+      inline_keyboard: [[{ text: "🏃 Играть", url: `https://t.me/${BOT_USERNAME}/${GAME_SHORT_NAME}?startapp=${token}` }]],
+    },
+  });
+}
+
 export default async (req) => {
   if (req.method !== "POST") return json({ ok: true });
 
@@ -41,11 +62,20 @@ export default async (req) => {
   if (!update) return json({ ok: true });
 
   const msg = update.message;
-  if (msg && msg.chat && msg.chat.type === "private" && typeof msg.text === "string") {
-    const cmd = msg.text.trim().split(/[\s@]/)[0].toLowerCase();
-    if (cmd === "/play" || cmd === "/start") {
-      await tg("sendMessage", gamesMenu(msg.chat.id));
+  if (msg && msg.chat && typeof msg.text === "string") {
+    const [first] = msg.text.trim().split(/\s+/);
+    const [cmd, target] = first.toLowerCase().split("@");
+    const forUs = !target || target === BOT_USERNAME;
+    if (forUs && (cmd === "/play" || cmd === "/start")) {
+      if (msg.chat.type === "private") await tg("sendMessage", gamesMenu(msg.chat.id));
+      else if (isGroup(msg.chat)) await greetGroup(msg.chat);
     }
+  }
+
+  // Бота добавили в группу
+  const mcm = update.my_chat_member;
+  if (mcm && isGroup(mcm.chat) && ["member", "administrator"].includes(mcm.new_chat_member && mcm.new_chat_member.status)) {
+    await greetGroup(mcm.chat);
   }
 
   const cb = update.callback_query;

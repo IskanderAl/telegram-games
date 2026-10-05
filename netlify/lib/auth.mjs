@@ -36,7 +36,8 @@ export function verifyInitData(initData, botToken, maxAgeSec = 24 * 3600) {
 
   try {
     const user = JSON.parse(params.get("user"));
-    return user && Number.isInteger(user.id) ? user : null;
+    // start_param входит в подписанные данные, подделать его нельзя
+    return user && Number.isInteger(user.id) ? { ...user, start_param: params.get("start_param") || "" } : null;
   } catch {
     return null;
   }
