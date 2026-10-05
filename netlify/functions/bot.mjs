@@ -43,7 +43,7 @@ async function greetGroup(chat) {
   await getStore({ name: "groups", consistency: "strong" }).set("g:" + token, String(chat.id));
   return tg("sendMessage", {
     chat_id: chat.id,
-    text: "🏃 Играем в «Догони его!» Нажми кнопку — твой результат (кем был и кого догонял) появится здесь.",
+    text: "🏃 Играем в «Догони его!» После забега нажми «Опубликовать в группе» — здесь появится карточка: кем ты был и кого догонял.",
     reply_markup: {
       inline_keyboard: [[{ text: "🏃 Играть", url: `https://t.me/${BOT_USERNAME}/${GAME_SHORT_NAME}?startapp=${token}` }]],
     },

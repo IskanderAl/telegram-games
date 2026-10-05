@@ -3,7 +3,6 @@ import { json, verifyInitData, displayName } from "../lib/auth.mjs";
 import { parseGroupToken, esc, cleanName } from "../lib/groups.mjs";
 
 const MAX_SCORE = 200000;
-const MIN_SCORE = 100;           // совсем короткие забеги в чат не пишем
 const THROTTLE_MS = 20 * 1000;   // не чаще одного сообщения в 20 секунд от игрока в группе
 const MAX_IMAGE_B64 = 600_000;   // ~450 КБ
 
@@ -32,17 +31,10 @@ export default async (req) => {
   if (!Number.isFinite(score) || score < 0 || score > MAX_SCORE || !Number.isFinite(gap) || gap < 1 || gap > 1000) {
     return json({ error: "bad data" }, 400);
   }
-  if (score < MIN_SCORE) return json({ posted: false, reason: "low" });
-
-  // Пишем только новый личный рекорд игрока в этой группе
-  const bestKey = `best:${user.start_param}:${user.id}`;
+  // Игрок сам нажимает «Опубликовать»; защищаемся только от частых повторов
   const lastKey = `last:${user.start_param}:${user.id}`;
-  const best = Number(await groups.get(bestKey)) || 0;
-  if (score <= best) return json({ posted: false, reason: "not_best" });
   const last = Number(await groups.get(lastKey)) || 0;
   if (Date.now() - last < THROTTLE_MS) return json({ posted: false, reason: "throttled" });
-  await groups.set(bestKey, String(score));
-  await groups.set(lastKey, String(Date.now()));
 
   const who = displayName(user);
   const role = cleanName(b.playerName);
@@ -69,7 +61,9 @@ export default async (req) => {
   if (!sent || !sent.ok) {
     sent = await tg("sendMessage", JSON.stringify({ chat_id: chatId, text: caption, parse_mode: "HTML" }));
   }
-  return json({ posted: !!(sent && sent.ok) });
+  const posted = !!(sent && sent.ok);
+  if (posted) await groups.set(lastKey, String(Date.now()));
+  return json({ posted });
 };
 
 export const config = { path: "/api/group-result" };
