@@ -28,7 +28,7 @@ jobs:
           ADSGRAM_BLOCK_ID: ${{ secrets.ADSGRAM_BLOCK_ID }}
         run: |
           mkdir _site
-          cp -r index.html game.js style.css runner _site/
+          cp -r index.html farm runner _site/
           printf 'window.APP_CONFIG = { ADSGRAM_BLOCK_ID: "%s" };\n' "$ADSGRAM_BLOCK_ID" > _site/config.js
 
       - uses: actions/configure-pages@v5

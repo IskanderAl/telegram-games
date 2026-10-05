@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Моя ферма</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="coins"><span class="ico">🪙</span><span id="coins">0</span></div>
+      <div class="rate"><span id="rate">0</span>/сек <span id="boost" class="boost hidden">⚡x2 <span id="boost-left"></span></span></div>
+    </header>
+
+    <main>
+      <button id="tap" class="tap-zone" type="button">
+        <span class="tap-title">🌱 Поливать урожай</span>
+        <span class="tap-sub">+<span id="tap-power">1</span> за касание</span>
+      </button>
+
+      <section id="farm" class="farm" aria-label="Ферма"></section>
+    </main>
+
+    <footer class="actions">
+      <button id="btn-ad-coins" class="btn ad" type="button">📺 Бонус<small id="ad-coins-sub"></small></button>
+      <button id="btn-ad-boost" class="btn ad" type="button">⚡ x2 на 2 мин<small>за рекламу</small></button>
+      <button id="btn-tap-up" class="btn" type="button">👆 Сильнее тап<small id="tap-up-sub"></small></button>
+    </footer>
+  </div>
+
+  <div id="modal" class="modal hidden">
+    <div class="sheet">
+      <div class="sheet-head"><h2 id="modal-title"></h2><button id="modal-close" class="close" type="button">✕</button></div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="../config.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
