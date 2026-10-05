@@ -33,6 +33,7 @@
     <p>Прыжок: тап по верху / Пробел / ↑ &nbsp;·&nbsp; Присесть: зажать низ экрана / ↓</p>
   </div>
 
+<script src="../config.js"></script>
 <script>
 "use strict";
 
@@ -47,7 +48,7 @@ const GRAVITY = 2400, JUMP_V = -820, FAST_FALL = 2.2;
 const SPEED_START = 320, SPEED_MAX = 760, SPEED_GROWTH = 0.1;
 
 // Block ID из кабинета Adsgram (partner.adsgram.ai). Пусто = демо-режим с фейковой рекламой.
-const ADSGRAM_BLOCK_ID = "";
+const ADSGRAM_BLOCK_ID = (window.APP_CONFIG && window.APP_CONFIG.ADSGRAM_BLOCK_ID) || "";
 const REVIVE_INVULN_SEC = 2;
 const REVIVE_CLEAR_PX = 450; // сколько пикселей впереди очищается от препятствий
 

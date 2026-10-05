@@ -3,7 +3,7 @@
 // ───────────── Настройки ─────────────
 const CONFIG = {
   // Block ID из кабинета Adsgram (partner.adsgram.ai). Пусто = демо-режим с фейковой рекламой.
-  ADSGRAM_BLOCK_ID: "",
+  ADSGRAM_BLOCK_ID: (window.APP_CONFIG && window.APP_CONFIG.ADSGRAM_BLOCK_ID) || "",
   SAVE_KEY: "farm_save_v1",
   PLOTS_TOTAL: 9,
   PLOTS_START: 3,
