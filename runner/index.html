@@ -9,7 +9,8 @@
   <style>
     html, body { margin: 0; min-height: 100%; background: #1b1d2a; overscroll-behavior: none; }
     body { display: flex; align-items: center; justify-content: center; padding: 8px 0; box-sizing: border-box; }
-    #wrap { position: relative; width: 100%; max-width: 800px; }
+    #wrap { width: 100%; max-width: 800px; }
+    #stage { position: relative; }
     canvas { width: 100%; display: block; background: #f4f1de; touch-action: none; user-select: none; }
     p { color: #8b90ad; font: 13px sans-serif; text-align: center; margin: 10px 8px 0; }
     .hidden { display: none !important; }
@@ -40,9 +41,11 @@
 </head>
 <body>
   <div id="wrap">
-    <canvas id="c" width="800" height="300"></canvas>
-    <button id="revive" class="hidden" type="button">📺 Воскреснуть (реклама)</button>
-    <div id="msg" class="hidden"></div>
+    <div id="stage">
+      <canvas id="c" width="800" height="300"></canvas>
+      <button id="revive" class="hidden" type="button">📺 Воскреснуть (реклама)</button>
+      <div id="msg" class="hidden"></div>
+    </div>
 
     <div id="setup">
       <div class="card">
@@ -81,7 +84,9 @@ if (tg) { tg.ready(); tg.expand(); }
 const haptic = (k) => { try { tg && tg.HapticFeedback.impactOccurred(k); } catch (_) {} };
 
 // ───────────── Настройки ─────────────
-const W = 800, H = 300, GROUND = 250;
+// На узком экране (телефон) делаем поле выше и уже, чтобы персонажи не выглядели крошечными
+const NARROW = window.innerWidth < 600;
+const W = NARROW ? 560 : 800, H = NARROW ? 400 : 300, GROUND = H - 50;
 const GRAVITY = 2400, JUMP_V = -820, FAST_FALL = 2.2;
 const SPEED_START = 320, SPEED_MAX = 760, SPEED_GROWTH = 0.1;
 const SPRITE_W = 48, SPRITE_H = 60, DUCK_H = 32;
@@ -94,6 +99,8 @@ const REVIVE_INVULN_SEC = 2;
 const REVIVE_CLEAR_PX = 450; // сколько пикселей впереди очищается от препятствий
 
 const cv = document.getElementById("c");
+cv.width = W;
+cv.height = H;
 const ctx = cv.getContext("2d");
 
 // ───────────── Фото игрока и цели ─────────────
