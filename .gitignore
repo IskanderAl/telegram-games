@@ -9,3 +9,4 @@ config.js
 runner/player.png
 runner/player_duck.png
 dist/
+.netlify/
