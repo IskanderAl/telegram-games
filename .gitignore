@@ -6,3 +6,5 @@ config.js
 .env
 .env.*
 !.env.example
+runner/player.png
+runner/player_duck.png
