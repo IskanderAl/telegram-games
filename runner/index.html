@@ -39,6 +39,12 @@
     #lb .rank { width: 28px; color: #8b90ad; }
     #lb .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #lb .note { color: #8b90ad; text-align: center; padding: 12px 0; }
+    #ad-life {
+      display: block; width: calc(100% - 16px); margin: 10px 8px 0; border: 0; border-radius: 12px;
+      background: #7b5cff; color: #fff; font: bold 15px sans-serif; padding: 12px; box-shadow: 0 4px 0 #5238c9;
+    }
+    #ad-life:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 #5238c9; }
+    #ad-life:disabled { opacity: .6; }
     #duck {
       display: block; width: calc(100% - 16px); margin: 10px 8px 0; border: 0; border-radius: 14px;
       background: #3d5a80; color: #fff; font: bold 18px sans-serif; padding: 18px 12px;
@@ -79,6 +85,7 @@
       <div id="msg" class="hidden"></div>
     </div>
 
+    <button id="ad-life" type="button">📺 Посмотри рекламу — получи ещё попытку</button>
     <button id="duck" type="button">⬇ Присесть (держи)</button>
 
     <div id="styles">
@@ -414,7 +421,7 @@ function hitbox(o) {
 
 function update(dt) {
   t += dt;
-  if (state !== "run") return;
+  if (state !== "run" || adBusy) return; // во время рекламы игра на паузе
 
   speed = Math.min(SPEED_MAX, SPEED_START + score * SPEED_GROWTH);
   distance += speed * dt;
@@ -438,7 +445,10 @@ function update(dt) {
 
   const pb = playerBox();
   if (player.invuln > 0) player.invuln -= dt;
-  else if (obstacles.some((o) => hit(pb, hitbox(o)))) gameOver();
+  else if (obstacles.some((o) => hit(pb, hitbox(o)))) {
+    if (extraLives > 0) { extraLives--; updateAdLife(); continueRun(); say("❤️ Запасная попытка использована"); }
+    else gameOver();
+  }
 }
 
 // ───────────── Сервер: рейтинг и подтверждение награды ─────────────
@@ -597,29 +607,55 @@ function say(text) {
   setTimeout(() => msgEl.classList.add("hidden"), 2200);
 }
 
-async function revive() {
-  if (adBusy || state !== "over" || revived) return;
-  adBusy = true;
-  reviveBtn.disabled = true;
+// Показ рекламы за награду; true — досмотрел (и сервер подтвердил, если включено)
+async function earnByAd(btn) {
+  if (adBusy) return false;
+  adBusy = true; // игра на паузе, пока идёт реклама (см. update)
+  btn.disabled = true;
   try {
     const ok = await showRewardedAd();
-    if (!ok) { say("Реклама недоступна или пропущена — воскрешения нет"); return; }
-    if (SERVER_REWARD && INIT_DATA && !(await confirmReward())) { say("Не удалось подтвердить просмотр рекламы, попробуй ещё раз"); return; }
-    revived = true;
-    reviveBtn.classList.add("hidden");
-    shareBtn.classList.add("hidden");
-    publishBtn.classList.add("hidden");
-    obstacles = obstacles.filter((o) => o.x > player.x + REVIVE_CLEAR_PX);
-    spawnIn = Math.max(spawnIn, 400);
-    Object.assign(player, { feet: GROUND, vy: 0, ground: true, duck: false, invuln: REVIVE_INVULN_SEC });
-    state = "run";
-    haptic("medium");
+    if (!ok) { say("Реклама недоступна или пропущена — награды нет"); return false; }
+    if (SERVER_REWARD && INIT_DATA && !(await confirmReward())) { say("Не удалось подтвердить просмотр рекламы, попробуй ещё раз"); return false; }
+    return true;
   } finally {
     adBusy = false;
-    reviveBtn.disabled = false;
+    btn.disabled = false;
   }
 }
+
+// Продолжить забег после столкновения: убрать препятствия впереди и дать короткую неуязвимость
+function continueRun() {
+  reviveBtn.classList.add("hidden");
+  shareBtn.classList.add("hidden");
+  publishBtn.classList.add("hidden");
+  obstacles = obstacles.filter((o) => o.x > player.x + REVIVE_CLEAR_PX);
+  spawnIn = Math.max(spawnIn, 400);
+  Object.assign(player, { feet: GROUND, vy: 0, ground: true, duck: false, invuln: REVIVE_INVULN_SEC });
+  state = "run";
+  haptic("medium");
+}
+
+async function revive() {
+  if (adBusy || state !== "over" || revived) return;
+  if (await earnByAd(reviveBtn)) { revived = true; continueRun(); }
+}
 reviveBtn.addEventListener("click", revive);
+
+// Постоянная кнопка под полем: «Посмотри рекламу — получи ещё попытку».
+// После проигрыша — сразу продолжаем; во время игры или до старта — запасная попытка на следующее столкновение.
+let extraLives = 0;
+const adLifeBtn = document.getElementById("ad-life");
+function updateAdLife() {
+  adLifeBtn.textContent = "📺 Посмотри рекламу — получи ещё попытку" + (extraLives ? `  (❤️×${extraLives})` : "");
+}
+adLifeBtn.addEventListener("click", async () => {
+  if (!(await earnByAd(adLifeBtn))) return;
+  if (state === "over") { continueRun(); return; }
+  extraLives++;
+  updateAdLife();
+  say("❤️ Запасная попытка получена");
+});
+updateAdLife();
 
 shareBtn.addEventListener("click", () => {
   const text = "Я не догнал его всего на " + gapMeters() + " м! Мой счёт: " + Math.floor(score) + ". Попробуешь лучше?";
