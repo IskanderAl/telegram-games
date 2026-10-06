@@ -323,7 +323,7 @@ duckBtn.addEventListener("contextmenu", (e) => e.preventDefault());
 const SPR = {
   svo_soldier:   { fw: 14, fh: 20, frames: 1, fps: 0 },
   svo_tank:      { fw: 34, fh: 18, frames: 2, fps: 6 },
-  svo_tank_ai:   { fw: 61, fh: 32, frames: 2, fps: 5 },   // сгенерирован нейросетью (ComfyUI), см. tools/comfy_out
+  svo_t90:       { fw: 130, fh: 36, frames: 2, fps: 5 },  // Т-90: ComfyUI img2img по силуэту, см. tools/comfy_prompts.md
   svo_drone:     { fw: 22, fh: 12, frames: 2, fps: 12 },
   kz_horse:      { fw: 30, fh: 22, frames: 2, fps: 8 },
   kz_tumbleweed: { fw: 16, fh: 16, frames: 1, fps: 0, roll: true },
@@ -336,10 +336,11 @@ for (const [key, d] of Object.entries(SPR)) {
   d.img.src = "sprites/" + key + ".png";
 }
 
-// scale — целый множитель (иначе пиксели будут разного размера); inset — отступы хитбокса от картинки: l, r, t, b
+// scale — множитель размера. Целый, чтобы пиксели были одинаковыми; у Т-90 1.5 — на экранах телефонов
+// (плотность 2) это ровно 3 физических пикселя. inset — отступы хитбокса от картинки: l, r, t, b
 const OBS = {
-  soldier: { spr: "svo_soldier",   scale: 3, inset: [8, 6, 4, 2] },   // слева ствол — на столкновение не считаем
-  tank:    { spr: "svo_tank_ai",   scale: 2, inset: [36, 6, 4, 2] },  // длинный ствол не считаем
+  soldier: { spr: "svo_soldier",   scale: 3,   inset: [8, 6, 4, 2] },   // слева ствол — на столкновение не считаем
+  tank:    { spr: "svo_t90",       scale: 1.5, inset: [61, 14, 9, 2] }, // корпус без длинного ствола
   drone:   { spr: "svo_drone",     scale: 3, inset: [8, 8, 10, 8], air: true },
   horse:   { spr: "kz_horse",      scale: 3, inset: [6, 12, 12, 4] },
   weed:    { spr: "kz_tumbleweed", scale: 2, inset: [5, 5, 5, 5] },
@@ -398,7 +399,9 @@ function spawn() {
     // воздушные препятствия летят на уровне головы стоящего (низ — на 34 пикселя выше земли)
     obstacles.push({ type: "spr", def, spr: s, x: W + 20, w, h, y: def.air ? GROUND - 34 - h : GROUND - h });
   }
-  spawnIn = speed * (0.85 + Math.random() * 0.8) + 120;
+  // после длинного препятствия (танк) оставляем больше места, чтобы было куда приземлиться
+  const lastW = obstacles[obstacles.length - 1].w;
+  spawnIn = speed * (0.85 + Math.random() * 0.8) + 120 + Math.max(0, lastW - 60);
 }
 
 const hit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;

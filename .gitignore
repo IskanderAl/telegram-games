@@ -13,3 +13,5 @@ dist/
 .reward-url.txt
 runner/sprites/*_preview.png
 tools/comfy_out/
+tools/comfy_out2/
+tools/comfy_t90/
