@@ -12,3 +12,4 @@ dist/
 .netlify/
 .reward-url.txt
 runner/sprites/*_preview.png
+tools/comfy_out/
