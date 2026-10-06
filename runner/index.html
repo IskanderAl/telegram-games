@@ -319,12 +319,12 @@ for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) duckBtn.a
 duckBtn.addEventListener("contextmenu", (e) => e.preventDefault());
 
 // ───────────── Стили (темы препятствий) ─────────────
-// Спрайты нарисованы в tools/sprites/*.sprite.txt, кадры лежат в строку: fw×fh — размер одного кадра в пикселях спрайта
+// Кадры лежат в строку: fw×fh — размер одного кадра в пикселях спрайта.
+// «СВО» — ComfyUI img2img по силуэтам (tools/comfy_prompts.md), «Казахстан» — tools/sprites/*.sprite.txt
 const SPR = {
-  svo_soldier:   { fw: 14, fh: 20, frames: 1, fps: 0 },
-  svo_tank:      { fw: 34, fh: 18, frames: 2, fps: 6 },
-  svo_t90:       { fw: 130, fh: 36, frames: 2, fps: 5 },  // Т-90: ComfyUI img2img по силуэту, см. tools/comfy_prompts.md
-  svo_drone:     { fw: 22, fh: 12, frames: 2, fps: 12 },
+  svo_fighter:   { fw: 16, fh: 40, frames: 2, fps: 2 },   // боец ВС РФ в «Ратнике», без знаков различия
+  svo_t90:       { fw: 114, fh: 36, frames: 2, fps: 5 },  // Т-90 с укороченной пушкой
+  svo_fpv:       { fw: 54, fh: 18, frames: 2, fps: 6 },   // FPV-дрон, вид сверху-сбоку
   kz_horse:      { fw: 30, fh: 22, frames: 2, fps: 8 },
   kz_tumbleweed: { fw: 16, fh: 16, frames: 1, fps: 0, roll: true },
   kz_eagle:      { fw: 28, fh: 17, frames: 2, fps: 6 },
@@ -336,12 +336,12 @@ for (const [key, d] of Object.entries(SPR)) {
   d.img.src = "sprites/" + key + ".png";
 }
 
-// scale — множитель размера. Целый, чтобы пиксели были одинаковыми; у Т-90 1.5 — на экранах телефонов
-// (плотность 2) это ровно 3 физических пикселя. inset — отступы хитбокса от картинки: l, r, t, b
+// scale — множитель размера. У «СВО» 1.5: на экранах телефонов (плотность 2) это ровно 3 физических пикселя,
+// у «Казахстана» целый. inset — отступы хитбокса от картинки: l, r, t, b
 const OBS = {
-  soldier: { spr: "svo_soldier",   scale: 3,   inset: [8, 6, 4, 2] },   // слева ствол — на столкновение не считаем
-  tank:    { spr: "svo_t90",       scale: 1.5, inset: [61, 14, 9, 2] }, // корпус без длинного ствола
-  drone:   { spr: "svo_drone",     scale: 3, inset: [8, 8, 10, 8], air: true },
+  soldier: { spr: "svo_fighter",   scale: 1.5, inset: [10, 2, 6, 2] },  // автомат слева на столкновение не считаем
+  tank:    { spr: "svo_t90",       scale: 1.5, inset: [37, 14, 9, 2] }, // корпус без ствола
+  drone:   { spr: "svo_fpv",       scale: 1.5, inset: [10, 10, 6, 2], air: true }, // низ выше головы присевшего
   horse:   { spr: "kz_horse",      scale: 3, inset: [6, 12, 12, 4] },
   weed:    { spr: "kz_tumbleweed", scale: 2, inset: [5, 5, 5, 5] },
   eagle:   { spr: "kz_eagle",      scale: 3, inset: [10, 10, 14, 10], air: true },

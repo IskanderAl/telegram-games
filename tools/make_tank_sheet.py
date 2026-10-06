@@ -20,11 +20,14 @@ def main():
     im = im.crop(im.getbbox())
     w, h = im.size
     fh = h + 1
-    while abs(fh * a.scale - round(fh * a.scale)) > 1e-6:  # при дробном масштабе высота кадра должна давать целые пиксели
+    while abs(fh * a.scale - round(fh * a.scale)) > 1e-6:  # при дробном масштабе размеры кадра должны давать целые пиксели
         fh += 1
-    sheet = Image.new("RGBA", (w * 2, fh), (0, 0, 0, 0))
+    fw = w
+    while abs(fw * a.scale - round(fw * a.scale)) > 1e-6:
+        fw += 1                                              # лишний прозрачный столбец справа
+    sheet = Image.new("RGBA", (fw * 2, fh), (0, 0, 0, 0))
     sheet.alpha_composite(im, (0, fh - h))       # кадр 1: на земле
-    sheet.alpha_composite(im, (w, fh - h - 1))   # кадр 2: на 1 px выше
+    sheet.alpha_composite(im, (fw, fh - h - 1))  # кадр 2: на 1 px выше
     sheet.save(a.dst)
 
     # Ствол — тонкая часть слева: столбцы, где непрозрачных пикселей меньше трети высоты корпуса.
@@ -36,12 +39,12 @@ def main():
     rows = alpha[:, left:right + 1].any(1)
     top = int(np.argmax(rows))
     s = a.scale
-    print(f"{a.dst}: кадр {w}x{fh}, 2 кадра")
-    print(f'SPR:  {{ fw: {w}, fh: {fh}, frames: 2, fps: 5 }}')
+    print(f"{a.dst}: кадр {fw}x{fh}, 2 кадра")
+    print(f'SPR:  {{ fw: {fw}, fh: {fh}, frames: 2, fps: 5 }}')
     print(f"корпус: столбцы {left}..{right} из {w}, верх корпуса на строке {top} из {h}")
     print(f"OBS inset (l, r, t, b) при scale {s}: "
-          f"[{round(left * s) + 4}, {round((w - 1 - right) * s) + 4}, {round((top + fh - h) * s) + 6}, 2]")
-    print(f"размер в игре: {w * s:g} x {fh * s:g}")
+          f"[{round(left * s) + 4}, {round((fw - 1 - right) * s) + 4}, {round((top + fh - h) * s) + 6}, 2]")
+    print(f"размер в игре: {fw * s:g} x {fh * s:g}")
 
 
 if __name__ == "__main__":

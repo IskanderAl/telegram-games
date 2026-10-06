@@ -21,9 +21,27 @@
    ```
    python tools/pixel_wide.py tools/comfy_t90/i2iP_954233467_1.png --width 128 --colors 28 --outline "#1d2210" -o tools/comfy_t90/cand/w128_i2iP_954233467_1.png
    ```
-4. **Лист из двух кадров и хитбокс** (`tools/make_tank_sheet.py`), в игре масштаб 1.5 (195×54 px):
+4. **Пушка покороче** (`tools/shorten_gun.py`): вырезаны столбцы ровной трубы до и после эжектора,
+   вылет за корпус 38 → 22 px:
    ```
-   python tools/make_tank_sheet.py tools/comfy_t90/cand/w128_i2iP_954233467_1.png runner/sprites/svo_t90.png --scale 1.5
+   python tools/shorten_gun.py tools/comfy_t90/cand/w128_i2iP_954233467_1.png tools/comfy_t90/cand/t90_shortgun.png 5:16 31:36
    ```
+5. **Лист из двух кадров и хитбокс** (`tools/make_tank_sheet.py`), в игре масштаб 1.5 (171×54 px):
+   ```
+   python tools/make_tank_sheet.py tools/comfy_t90/cand/t90_shortgun.png runner/sprites/svo_t90.png --scale 1.5
+   ```
+
+## svo_fighter и svo_fpv — боец ВС РФ и FPV-дрон (без флагов и знаков различия)
+
+1. Силуэты (`tools/svo_bases.py`): боец в «Ратнике» (шлем 6Б47 в чехле, наушники, очки, бронежилет, наколенники,
+   камуфляж ЕМР, АК стволом к земле), FPV в ракурсе сверху-сбоку (4 винта видны), а также варианты FPV сбоку и «Ланцета».
+   ```
+   python tools/svo_bases.py tools/comfy_svo
+   ```
+2. img2img с пиксельной LoRA, denoise 0.55:
+   - боец — seed 393911595, вариант №3; промпт: `pixel art, modern Russian army soldier, Ratnik combat gear, 6B47 helmet with digital camouflage cover, tactical headset, ballistic glasses, EMR digital pixel camouflage uniform, plate carrier with magazine pouches, knee pads, AK-12 rifle held at low ready pointing down, side view facing left, full body, standing, detailed shading, plain white background`; негатив: `flag, patch, insignia, emblem, chevron, armband, letters, text, numbers, Z symbol, V symbol, blood, gore, multiple people, cropped, front view, back view, aiming, gradient, antialiasing, noise, blurry`
+   - FPV — seed 1058255568, вариант №2; промпт: `pixel art, FPV quadcopter drone seen from the side and slightly above, four spinning propellers, black carbon fiber frame, battery on top, camera at the front, olive green munition attached underneath, detailed shading, plain white background`
+3. Пикселизация: боец `--height 36 --colors 20 --holes 12` (убирает просвет фона между ногами), дрон `--width 52 --colors 16 --shadow 0 --tol 30` (светлые винты не путать с тенью).
+4. Листы: `make_tank_sheet.py ... --scale 1.5` → `runner/sprites/svo_fighter.png` (24×60 px в игре), `runner/sprites/svo_fpv.png` (81×27 px).
 
 Сравнительные листы вариантов: `tools/compare_sprites.py`. Промежуточные картинки лежат в `tools/comfy_t90/` (в git не попадают).

@@ -39,6 +39,38 @@ def background_mask(img, tol, shadow_lum):
             continue
         mask[y, x] = True
         dq.extend(((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)))
+    return mask, bg
+
+
+def remove_holes(img, mask, bg, tol, min_px):
+    """Замкнутые участки цвета фона (просвет между ногами, между рукой и корпусом) — тоже фон.
+    До них заливка от краёв не доходит. Мелкие участки (блики) не трогаем."""
+    w, h = img.size
+    px = img.load()
+    tol2 = tol * tol
+    near = np.zeros((h, w), dtype=bool)
+    for y in range(h):
+        for x in range(w):
+            if not mask[y, x]:
+                c = px[x, y]
+                near[y, x] = sum((c[k] - bg[k]) ** 2 for k in range(3)) <= tol2
+    seen = np.zeros_like(near)
+    for sy in range(h):
+        for sx in range(w):
+            if not near[sy, sx] or seen[sy, sx]:
+                continue
+            comp, dq = [], deque([(sx, sy)])
+            seen[sy, sx] = True
+            while dq:
+                x, y = dq.popleft()
+                comp.append((x, y))
+                for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                    if 0 <= nx < w and 0 <= ny < h and near[ny, nx] and not seen[ny, nx]:
+                        seen[ny, nx] = True
+                        dq.append((nx, ny))
+            if len(comp) >= min_px:
+                for x, y in comp:
+                    mask[y, x] = True
     return mask
 
 
@@ -112,11 +144,14 @@ def main():
     ap.add_argument("src")
     ap.add_argument("-o", "--out")
     ap.add_argument("--width", type=int, default=96, help="ширина спрайта в пикселях (высота по пропорции)")
+    ap.add_argument("--height", type=int, default=0, help="задать высоту вместо ширины (для фигур в рост)")
     ap.add_argument("--colors", type=int, default=24)
     ap.add_argument("--tol", type=int, default=40, help="допуск цвета фона")
     ap.add_argument("--shadow", type=int, default=175, help="светлые серые пиксели ярче этого считаются тенью (0 = выкл.)")
     ap.add_argument("--work", type=int, default=4, help="во сколько раз уменьшать кадр для поиска фона")
     ap.add_argument("--min-island", type=int, default=6)
+    ap.add_argument("--holes", type=int, default=0,
+                    help="убирать замкнутые участки цвета фона от N пикселей (в уменьшенном кадре); 0 = выкл.")
     ap.add_argument("--sat", type=float, default=1.0, help="насыщенность (1 = без изменений)")
     ap.add_argument("--bright", type=float, default=1.0)
     ap.add_argument("--flip", action="store_true", help="отзеркалить по горизонтали")
@@ -131,7 +166,9 @@ def main():
 
     k = max(1, a.work)
     work = src.resize((src.width // k, src.height // k), Image.BOX)
-    bgm = background_mask(work, a.tol, a.shadow)
+    bgm, bg = background_mask(work, a.tol, a.shadow)
+    if a.holes:
+        bgm = remove_holes(work, bgm, bg, min(a.tol, 28), a.holes)
     alpha_work = Image.fromarray(np.where(bgm, 0, 255).astype(np.uint8), mode="L")
     bbox = alpha_work.getbbox()
     if not bbox:
@@ -141,8 +178,12 @@ def main():
     crop = np.asarray(src.crop(full_box))
     acrop = np.asarray(alpha_work.crop(bbox).resize((crop.shape[1], crop.shape[0]), Image.NEAREST))
 
-    w = a.width
-    h = max(1, round(crop.shape[0] * w / crop.shape[1]))
+    if a.height:
+        h = a.height
+        w = max(1, round(crop.shape[1] * h / crop.shape[0]))
+    else:
+        w = a.width
+        h = max(1, round(crop.shape[0] * w / crop.shape[1]))
     rgb, a_s = resize_premultiplied(crop, acrop, (w, h))
     opaque = drop_islands(a_s >= 0.5, a.min_island)
     rgb = quantize(rgb, opaque, a.colors)
