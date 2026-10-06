@@ -2,8 +2,6 @@
 
 // ───────────── Настройки ─────────────
 const CONFIG = {
-  // Block ID из кабинета Adsgram (partner.adsgram.ai). Пусто = демо-режим с фейковой рекламой.
-  ADSGRAM_BLOCK_ID: (window.APP_CONFIG && window.APP_CONFIG.ADSGRAM_BLOCK_ID) || "",
   SAVE_KEY: "farm_save_v1",
   PLOTS_TOTAL: 9,
   PLOTS_START: 3,
@@ -12,10 +10,6 @@ const CONFIG = {
   UPGRADE_MULT: 1.5,
   OFFLINE_CAP_SEC: 2 * 3600,
   OFFLINE_RATE: 0.5,
-  BOOST_MULT: 2,
-  BOOST_SEC: 120,
-  AD_BONUS_MINUTES: 10,
-  AD_BONUS_COOLDOWN_SEC: 60,
   TAP_UP_BASE: 50,
   TAP_UP_MULT: 2.2,
 };
@@ -49,8 +43,6 @@ function newState() {
     plots: Array.from({ length: CONFIG.PLOTS_TOTAL }, () => null),
     unlocked: CONFIG.PLOTS_START,
     tapLevel: 0,
-    boostUntil: 0,
-    adBonusReadyAt: 0,
     lastSeen: Date.now(),
   };
 }
@@ -72,8 +64,7 @@ function save() {
 // ───────────── Формулы ─────────────
 const plotIncome = (p) => (p ? B[p.id].income * p.level : 0);
 const baseIncome = () => state.plots.reduce((s, p) => s + plotIncome(p), 0);
-const boostActive = () => Date.now() < state.boostUntil;
-const income = () => baseIncome() * (boostActive() ? CONFIG.BOOST_MULT : 1);
+const income = () => baseIncome();
 const tapPower = () => 1 + state.tapLevel;
 const upgradeCost = (p) => Math.ceil(B[p.id].cost * Math.pow(CONFIG.UPGRADE_MULT, p.level));
 const unlockCost = () => Math.ceil(CONFIG.UNLOCK_BASE * Math.pow(CONFIG.UNLOCK_MULT, state.unlocked - CONFIG.PLOTS_START));
@@ -90,10 +81,8 @@ function fmt(n) {
 // ───────────── Элементы ─────────────
 const $ = (id) => document.getElementById(id);
 const el = {
-  coins: $("coins"), rate: $("rate"), boost: $("boost"), boostLeft: $("boost-left"),
+  coins: $("coins"), rate: $("rate"),
   tap: $("tap"), tapPower: $("tap-power"), farm: $("farm"),
-  btnAdCoins: $("btn-ad-coins"), adCoinsSub: $("ad-coins-sub"),
-  btnAdBoost: $("btn-ad-boost"),
   btnTapUp: $("btn-tap-up"), tapUpSub: $("tap-up-sub"),
   modal: $("modal"), modalTitle: $("modal-title"), modalBody: $("modal-body"), modalClose: $("modal-close"),
   toast: $("toast"),
@@ -164,64 +153,6 @@ el.tap.addEventListener("click", (e) => {
   renderStats();
 });
 el.btnTapUp.addEventListener("click", upgradeTap);
-
-// ───────────── Реклама (Adsgram) ─────────────
-let adBusy = false;
-
-function showRewardedAd() {
-  if (window.Adsgram && CONFIG.ADSGRAM_BLOCK_ID) {
-    const controller = window.Adsgram.init({ blockId: CONFIG.ADSGRAM_BLOCK_ID });
-    // resolve — досмотрел, reject — пропустил или ошибка/нет рекламы
-    return controller.show().then(() => true, () => false);
-  }
-  return demoAd();
-}
-
-// Демо-режим для локальной разработки, когда blockId не задан
-function demoAd() {
-  return new Promise((resolve) => {
-    const d = document.createElement("div");
-    d.className = "demo-ad";
-    let left = 3;
-    d.innerHTML = '<div style="font-size:48px">📺</div><div>Демо-реклама (задайте ADSGRAM_BLOCK_ID)</div><div id="demo-left"></div>';
-    document.body.appendChild(d);
-    const tick = () => {
-      d.querySelector("#demo-left").textContent = "Награда через " + left + " c";
-      if (left-- <= 0) { d.remove(); resolve(true); } else setTimeout(tick, 1000);
-    };
-    tick();
-  });
-}
-
-async function watchAd(onReward) {
-  if (adBusy) return;
-  adBusy = true;
-  try {
-    const ok = await showRewardedAd();
-    if (ok) { onReward(); haptic("heavy"); render(); save(); }
-    else toast("Реклама недоступна или пропущена — награды нет");
-  } finally {
-    adBusy = false;
-  }
-}
-
-el.btnAdCoins.addEventListener("click", () => {
-  const wait = Math.ceil((state.adBonusReadyAt - Date.now()) / 1000);
-  if (wait > 0) return toast("Следующий бонус через " + wait + " c");
-  watchAd(() => {
-    const gain = Math.max(100, baseIncome() * 60 * CONFIG.AD_BONUS_MINUTES);
-    state.coins += gain;
-    state.adBonusReadyAt = Date.now() + CONFIG.AD_BONUS_COOLDOWN_SEC * 1000;
-    toast("🎁 +" + fmt(gain) + " монет");
-  });
-});
-
-el.btnAdBoost.addEventListener("click", () => {
-  watchAd(() => {
-    state.boostUntil = Math.max(Date.now(), state.boostUntil) + CONFIG.BOOST_SEC * 1000;
-    toast("⚡ Доход x" + CONFIG.BOOST_MULT + " включён");
-  });
-});
 
 // ───────────── Модальное окно ─────────────
 function openModal(title) {
@@ -307,13 +238,6 @@ function renderStats() {
   el.tapPower.textContent = fmt(tapPower());
   el.tapUpSub.textContent = "🪙 " + fmt(tapUpCost());
   el.btnTapUp.disabled = state.coins < tapUpCost();
-
-  const active = boostActive();
-  el.boost.classList.toggle("hidden", !active);
-  if (active) el.boostLeft.textContent = Math.ceil((state.boostUntil - Date.now()) / 1000) + "с";
-
-  const wait = Math.ceil((state.adBonusReadyAt - Date.now()) / 1000);
-  el.adCoinsSub.textContent = wait > 0 ? "через " + wait + " c" : "+" + fmt(Math.max(100, baseIncome() * 60 * CONFIG.AD_BONUS_MINUTES));
 }
 
 function render() { renderFarm(); renderStats(); }

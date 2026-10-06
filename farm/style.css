@@ -43,7 +43,6 @@ html, body {
 .coins { font-size: 26px; font-weight: 800; color: var(--accent); }
 .coins .ico { margin-right: 6px; }
 .rate { font-size: 14px; color: var(--muted); text-align: right; }
-.boost { color: var(--accent); font-weight: 700; margin-left: 6px; }
 
 main { flex: 1; overflow-y: auto; padding: 12px 0; }
 
@@ -96,7 +95,7 @@ main { flex: 1; overflow-y: auto; padding: 12px 0; }
 
 .actions {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 1fr;
   gap: 8px;
   padding: 10px 0 14px;
 }
@@ -114,8 +113,6 @@ main { flex: 1; overflow-y: auto; padding: 12px 0; }
   gap: 2px;
 }
 .btn small { font-weight: 500; color: var(--muted); font-size: 11px; }
-.btn.ad { background: var(--ad); }
-.btn.ad small { color: #ddd5ff; }
 .btn:disabled { opacity: .45; }
 .btn:active:not(:disabled) { filter: brightness(1.15); }
 
@@ -194,17 +191,3 @@ main { flex: 1; overflow-y: auto; padding: 12px 0; }
   to { opacity: 0; transform: translateY(-50px); }
 }
 
-.demo-ad {
-  position: fixed;
-  inset: 0;
-  background: #111;
-  color: #fff;
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  text-align: center;
-  padding: 24px;
-}

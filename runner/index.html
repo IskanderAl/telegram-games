@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Раннер</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
   <style>
     html, body { margin: 0; min-height: 100%; background: #1b1d2a; overscroll-behavior: none; }
     body { display: flex; align-items: center; justify-content: center; padding: 8px 0; box-sizing: border-box; }
@@ -20,7 +19,6 @@
     #actions button { pointer-events: auto; border: 0; border-radius: 12px; color: #fff; font: bold 15px sans-serif; padding: 10px 16px; }
     #actions button:active:not(:disabled) { transform: translateY(3px); box-shadow: none !important; }
     #actions button:disabled { opacity: .6; }
-    #revive { background: #7b5cff; font-size: 16px !important; padding: 12px 20px !important; box-shadow: 0 4px 0 #5238c9; }
     #share { background: #2aabee; box-shadow: 0 4px 0 #1b82b8; }
     #publish { background: #2e9e5b; box-shadow: 0 4px 0 #1f7340; }
     #msg { position: absolute; left: 0; right: 0; top: 8px; text-align: center; color: #3a3a3a; font: 14px sans-serif; }
@@ -39,12 +37,6 @@
     #lb .rank { width: 28px; color: #8b90ad; }
     #lb .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #lb .note { color: #8b90ad; text-align: center; padding: 12px 0; }
-    #ad-life {
-      display: block; width: calc(100% - 16px); margin: 10px 8px 0; border: 0; border-radius: 12px;
-      background: #7b5cff; color: #fff; font: bold 15px sans-serif; padding: 12px; box-shadow: 0 4px 0 #5238c9;
-    }
-    #ad-life:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 #5238c9; }
-    #ad-life:disabled { opacity: .6; }
     #duck {
       display: block; width: calc(100% - 16px); margin: 10px 8px 0; border: 0; border-radius: 14px;
       background: #3d5a80; color: #fff; font: bold 18px sans-serif; padding: 18px 12px;
@@ -68,7 +60,6 @@
     .nm { width: 100%; min-width: 0; border: 0; border-radius: 8px; background: #1b1d2a; color: #e6e8f5; font: 13px sans-serif; padding: 6px 8px; }
     .nm::placeholder { color: #6b708c; }
 
-    .demo-ad { position: fixed; inset: 0; background: #111; color: #fff; z-index: 40; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; font: 16px sans-serif; text-align: center; padding: 24px; }
   </style>
 </head>
 <body>
@@ -76,7 +67,6 @@
     <div id="stage">
       <canvas id="c" width="800" height="300"></canvas>
       <div id="actions">
-        <button id="revive" class="hidden" type="button">📺 Воскреснуть (реклама)</button>
         <div class="row2">
           <button id="share" class="hidden" type="button">📤 Поделиться</button>
           <button id="publish" class="hidden" type="button">📣 Опубликовать в группе</button>
@@ -85,7 +75,6 @@
       <div id="msg" class="hidden"></div>
     </div>
 
-    <button id="ad-life" type="button">📺 Посмотри рекламу — получи ещё попытку</button>
     <button id="duck" type="button">⬇ Присесть (держи)</button>
 
     <div id="styles">
@@ -128,7 +117,6 @@
 
 <div id="lb" class="hidden"><div class="panel"><h2><span>🏆 Рейтинг</span><button id="lb-close" type="button">✕</button></h2><div id="lb-body"></div></div></div>
 
-<script src="../config.js"></script>
 <script>
 "use strict";
 
@@ -148,13 +136,6 @@ const TARGET_SIZE = 100;
 const PHOTO_PX = 256; // сторона сохраняемого квадрата
 const PHOTO_QUALITY = 0.92;
 
-// Block ID из кабинета Adsgram (partner.adsgram.ai). Пусто = демо-режим с фейковой рекламой.
-const ADSGRAM_BLOCK_ID = (window.APP_CONFIG && window.APP_CONFIG.ADSGRAM_BLOCK_ID) || "";
-// Серверная проверка награды: Adsgram шлёт GET на /api/reward, клиент подтверждает через /api/claim.
-// Включайте (SERVER_REWARD: true в config.js), когда Reward URL блока настроен и проверен.
-const SERVER_REWARD = !!(window.APP_CONFIG && window.APP_CONFIG.SERVER_REWARD);
-const REVIVE_INVULN_SEC = 2;
-const REVIVE_CLEAR_PX = 450; // сколько пикселей впереди очищается от препятствий
 
 const cv = document.getElementById("c");
 // Рисуем в разрешении экрана (Retina и т.п.), а в коде по-прежнему работаем в «логических» координатах W×H
@@ -251,8 +232,6 @@ function drawPhoto(im, x, y, w, h, r) {
 // ───────────── Состояние ─────────────
 let state = "ready"; // ready | run | over
 let player, obstacles, speed, score, distance, spawnIn, hi, t;
-let revived = false, adBusy = false;
-const reviveBtn = document.getElementById("revive");
 const shareBtn = document.getElementById("share");
 const publishBtn = document.getElementById("publish");
 const msgEl = document.getElementById("msg");
@@ -267,8 +246,6 @@ function reset() {
   distance = 0;
   spawnIn = 500;
   t = 0;
-  revived = false;
-  reviveBtn.classList.add("hidden");
   shareBtn.classList.add("hidden");
   publishBtn.classList.add("hidden");
   publishBtn.disabled = false;
@@ -292,7 +269,6 @@ function jump() {
   }
 }
 function start() {
-  if (adBusy) return;
   if (state === "over" && t < 0.4) return; // защита от случайного рестарта
   reset();
   state = "run";
@@ -421,7 +397,7 @@ function hitbox(o) {
 
 function update(dt) {
   t += dt;
-  if (state !== "run" || adBusy) return; // во время рекламы игра на паузе
+  if (state !== "run") return;
 
   speed = Math.min(SPEED_MAX, SPEED_START + score * SPEED_GROWTH);
   distance += speed * dt;
@@ -445,10 +421,7 @@ function update(dt) {
 
   const pb = playerBox();
   if (player.invuln > 0) player.invuln -= dt;
-  else if (obstacles.some((o) => hit(pb, hitbox(o)))) {
-    if (extraLives > 0) { extraLives--; updateAdLife(); continueRun(); say("❤️ Запасная попытка использована"); }
-    else gameOver();
-  }
+  else if (obstacles.some((o) => hit(pb, hitbox(o)))) gameOver();
 }
 
 // ───────────── Сервер: рейтинг и подтверждение награды ─────────────
@@ -464,18 +437,6 @@ async function api(path, body) {
   } catch (_) {
     return { status: 0, data: null };
   }
-}
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-// Adsgram может прислать колбэк с небольшой задержкой — несколько попыток
-async function confirmReward() {
-  for (let i = 0; i < 6; i++) {
-    const r = await api("/claim", {});
-    if (r.data && r.data.ok) return true;
-    if (r.status && r.status !== 404) return false; // ошибка авторизации/устаревшая награда — повторять бессмысленно
-    await sleep(700);
-  }
-  return false;
 }
 
 const lbEl = document.getElementById("lb");
@@ -575,87 +536,12 @@ publishBtn.addEventListener("click", async () => {
   publishBtn.disabled = false;
 });
 
-// ───────────── Воскрешение за рекламу ─────────────
-function showRewardedAd() {
-  if (window.Adsgram && ADSGRAM_BLOCK_ID) {
-    const controller = window.Adsgram.init({ blockId: ADSGRAM_BLOCK_ID });
-    // resolve — досмотрел до конца; reject — пропустил, нет рекламы или ошибка
-    return controller.show().then(() => true, () => false);
-  }
-  return demoAd();
-}
-
-// Демо-режим для локальной разработки, когда blockId не задан
-function demoAd() {
-  return new Promise((resolve) => {
-    const d = document.createElement("div");
-    d.className = "demo-ad";
-    d.innerHTML = '<div style="font-size:48px">📺</div><div>Демо-реклама (задайте ADSGRAM_BLOCK_ID)</div><div class="left"></div>';
-    document.body.appendChild(d);
-    let left = 3;
-    const tick = () => {
-      d.querySelector(".left").textContent = "Награда через " + left + " c";
-      if (left-- <= 0) { d.remove(); resolve(true); } else setTimeout(tick, 1000);
-    };
-    tick();
-  });
-}
-
+// ───────────── Подсказки на экране ─────────────
 function say(text) {
   msgEl.textContent = text;
   msgEl.classList.remove("hidden");
   setTimeout(() => msgEl.classList.add("hidden"), 2200);
 }
-
-// Показ рекламы за награду; true — досмотрел (и сервер подтвердил, если включено)
-async function earnByAd(btn) {
-  if (adBusy) return false;
-  adBusy = true; // игра на паузе, пока идёт реклама (см. update)
-  btn.disabled = true;
-  try {
-    const ok = await showRewardedAd();
-    if (!ok) { say("Реклама недоступна или пропущена — награды нет"); return false; }
-    if (SERVER_REWARD && INIT_DATA && !(await confirmReward())) { say("Не удалось подтвердить просмотр рекламы, попробуй ещё раз"); return false; }
-    return true;
-  } finally {
-    adBusy = false;
-    btn.disabled = false;
-  }
-}
-
-// Продолжить забег после столкновения: убрать препятствия впереди и дать короткую неуязвимость
-function continueRun() {
-  reviveBtn.classList.add("hidden");
-  shareBtn.classList.add("hidden");
-  publishBtn.classList.add("hidden");
-  obstacles = obstacles.filter((o) => o.x > player.x + REVIVE_CLEAR_PX);
-  spawnIn = Math.max(spawnIn, 400);
-  Object.assign(player, { feet: GROUND, vy: 0, ground: true, duck: false, invuln: REVIVE_INVULN_SEC });
-  state = "run";
-  haptic("medium");
-}
-
-async function revive() {
-  if (adBusy || state !== "over" || revived) return;
-  if (await earnByAd(reviveBtn)) { revived = true; continueRun(); }
-}
-reviveBtn.addEventListener("click", revive);
-
-// Постоянная кнопка под полем: «Посмотри рекламу — получи ещё попытку».
-// После проигрыша — сразу продолжаем; во время игры или до старта — запасная попытка на следующее столкновение.
-let extraLives = 0;
-const adLifeBtn = document.getElementById("ad-life");
-function updateAdLife() {
-  adLifeBtn.textContent = "📺 Посмотри рекламу — получи ещё попытку" + (extraLives ? `  (❤️×${extraLives})` : "");
-}
-adLifeBtn.addEventListener("click", async () => {
-  if (!(await earnByAd(adLifeBtn))) return;
-  if (state === "over") { continueRun(); return; }
-  extraLives++;
-  updateAdLife();
-  say("❤️ Запасная попытка получена");
-});
-updateAdLife();
 
 shareBtn.addEventListener("click", () => {
   const text = "Я не догнал его всего на " + gapMeters() + " м! Мой счёт: " + Math.floor(score) + ". Попробуешь лучше?";
@@ -671,7 +557,6 @@ function gameOver() {
   t = 0;
   haptic("heavy");
   shareBtn.classList.remove("hidden");
-  if (!revived) reviveBtn.classList.remove("hidden");
   if (INIT_DATA) api("/leaderboard", { score: Math.floor(score) });
   if (GROUP_MODE) publishBtn.classList.remove("hidden");
   if (score > hi) {
